@@ -2,36 +2,60 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Inżynierski IoT</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Stacja Meteo ESP32</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="container">
+        <div class="top-right-controls">
+            <div id="connection-status" class="status-box">
+                <span id="wifi-icon">●</span> 
+                <span id="status-text">Łączenie...</span>
+            </div>
+            
+            <button class="export-btn" onclick="exportToCSV()">Eksportuj CSV</button>
 
-<h1>Stacja pogodowa</h1>
+            <div class="theme-switch-wrapper">
+                <label class="theme-switch" for="checkbox">
+                    <input type="checkbox" id="checkbox" />
+                    <div class="slider round">
+                        <span class="icon-sun">☀️</span>
+                        <span class="icon-moon">🌙</span>
+                    </div>
+                </label>
+            </div>
+        </div>
 
-<div class="grid">
-    <div class="card">
-        <span>Temperatura</span>
-        <span id="v1" class="value">--</span>
-        <span>°C</span>
+        <h1>Stacja Pogodowa ESP32</h1>
+
+        <div class="control-panel">
+            <div class="group-label">Interwał i Filtry</div>
+            <div class="timer-box">Nowy punkt za: <span id="timer">--:--</span></div>
+            
+            <div class="btn-group" id="interval-btns">
+                <button class="active" onclick="changeInterval(5, this)">5 min</button>
+                <button onclick="changeInterval(60, this)">1 h</button>
+                <button onclick="changeInterval(360, this)">6 h</button>
+            </div>
+
+            <div class="btn-group" id="filter-btns">
+                <button class="active" onclick="setFilter('all', this)">Doba</button>
+                <button onclick="setFilter('day', this)">Dzień</button>
+                <button onclick="setFilter('night', this)">Noc</button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card"><h3>Temperatura</h3><div class="value"><span id="v1">--.-</span>°C</div></div>
+            <div class="card"><h3>Wilgotność</h3><div class="value"><span id="v2">--.-</span>%</div></div>
+            <div class="card"><h3>Ciśnienie</h3><div class="value"><span id="v3">----</span> hPa</div></div>
+        </div>
+
+        <div class="chart-container"><canvas id="tempChart"></canvas></div>
+        <div class="chart-container"><canvas id="humChart"></canvas></div>
+        <div class="chart-container"><canvas id="presChart"></canvas></div>
     </div>
-    <div class="card">
-        <span>Wilgotność</span>
-        <span id="v2" class="value">--</span>
-        <span>%</span>
-    </div>
-    <div class="card">
-        <span>Ciśnienie</span>
-        <span id="v3" class="value">--</span>
-        <span>hPa</span>
-    </div>
-</div>
-
-<div class="chart-container"><canvas id="tempChart"></canvas></div>
-<div class="chart-container"><canvas id="humChart"></canvas></div>
-<div class="chart-container"><canvas id="presChart"></canvas></div>
-
-<script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
