@@ -1,14 +1,27 @@
-// === KONFIGURACJA ===
 const scriptURL = "https://script.google.com/macros/s/AKfycby0E-JWzMjlf2RsRA_viuL1DB7Ih7PaZPdnZoqholUTtMdBwFv4C8gYOolQhtmdSWvL0g/exec";
-
 let charts = {};
+let currentInterval = "5min";
+const visiblePoints = 20; // Ile punktów widać naraz na ekranie
 
-// Inicjalizacja wykresów Chart.js
 function initCharts() {
     const commonOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        scales: { y: { beginAtZero: false } }
+        scales: { 
+            y: { beginAtZero: false },
+            x: { 
+                ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+                min: 0,
+                max: visiblePoints
+            }
+        },
+        plugins: {
+            legend: { labels: { color: '#8b949e' } },
+            zoom: {
+                pan: { enabled: true, mode: 'x' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+            }
+        }
     };
 
     charts.V1 = new Chart(document.getElementById('tempChart'), {
@@ -30,77 +43,94 @@ function initCharts() {
     });
 }
 
-// Funkcja pobierająca dane przez Apps Script
+// Obsługa suwaka do patrzenia w historię
+function manualScroll(chartKey, value) {
+    const chart = charts[chartKey];
+    const totalPoints = chart.data.labels.length;
+    if (totalPoints > visiblePoints) {
+        const start = Math.floor((value / 100) * (totalPoints - visiblePoints));
+        chart.options.scales.x.min = start;
+        chart.options.scales.x.max = start + visiblePoints;
+        chart.update('none');
+    }
+}
+
 async function refreshValues() {
     try {
-        // Dodajemy ?read=true, żeby Apps Script wiedział, że chcemy odczytać dane
-        const response = await fetch(scriptURL + "?read=true");
+        const response = await fetch(`${scriptURL}?read=true&interval=${currentInterval}`);
         const data = await response.json();
 
-        if (data && data.length > 0) {
-            // Ostatni wiersz danych (najnowszy)
+        if (Array.isArray(data) && data.length > 0) {
             const lastRow = data[data.length - 1];
-            
-            // Mapowanie: lastRow[0]=Data, [1]=Temp, [2]=Wilg, [3]=Cisn
             document.getElementById('v1').innerText = parseFloat(lastRow[1]).toFixed(1);
             document.getElementById('v2').innerText = parseFloat(lastRow[2]).toFixed(1);
             document.getElementById('v3').innerText = Math.round(lastRow[3]);
 
-            // Status połączenia na zielono
             document.getElementById('status-text').innerText = "Połączono";
             document.getElementById('wifi-icon').style.color = "#7ee787";
 
             updateCharts(data);
         }
     } catch (error) {
-        console.error("Błąd pobierania danych:", error);
-        document.getElementById('status-text').innerText = "Błąd połączenia";
-        document.getElementById('wifi-icon').style.color = "#ff7b72";
+        console.error("Błąd fetch:", error);
+        document.getElementById('status-text').innerText = "Błąd danych";
     }
 }
 
-// Funkcja aktualizująca wykresy
 function updateCharts(data) {
     const labels = data.map(row => {
         const d = new Date(row[0]);
         return d.getHours() + ":" + d.getMinutes().toString().padStart(2, '0');
     });
 
-    charts.V1.data.labels = labels;
-    charts.V1.data.datasets[0].data = data.map(row => row[1]);
-    
-    charts.V2.data.labels = labels;
-    charts.V2.data.datasets[0].data = data.map(row => row[2]);
-    
-    charts.V3.data.labels = labels;
-    charts.V3.data.datasets[0].data = data.map(row => row[3]);
+    const datasets = [
+        data.map(row => row[1]),
+        data.map(row => row[2]),
+        data.map(row => row[3])
+    ];
 
-    charts.V1.update('none');
-    charts.V2.update('none');
-    charts.V3.update('none');
+    Object.keys(charts).forEach((key, index) => {
+        charts[key].data.labels = labels;
+        charts[key].data.datasets[0].data = datasets[index];
+        
+        // Auto-przesuwanie jeśli suwak jest na końcu
+        const slider = document.getElementById('scroll' + key);
+        if (slider && slider.value == 100) {
+            const total = labels.length;
+            charts[key].options.scales.x.min = Math.max(0, total - visiblePoints);
+            charts[key].options.scales.x.max = total;
+        }
+        charts[key].update('none'); 
+    });
 }
 
-// Obsługa przycisków interwału (pod Twój HTML)
 function changeInterval(min, btn) {
+    if (min === 5) currentInterval = "5min";
+    else if (min === 60) currentInterval = "1hour";
+    else if (min === 360) currentInterval = "6hour";
+
     document.querySelectorAll('#interval-btns button').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    
+    Object.values(charts).forEach(chart => chart.resetZoom());
     refreshValues();
 }
 
-// Eksport CSV (otwiera dane w nowym oknie)
-function exportToCSV() {
-    window.open(scriptURL + "?read=true");
+function setFilter(type, btn) {
+    document.querySelectorAll('#filter-btns button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Logika filtra (opcjonalnie)
 }
 
-// Start po załadowaniu okna
+function exportToCSV() {
+    window.open(`${scriptURL}?read=true&interval=${currentInterval}`);
+}
+
 window.onload = () => {
     initCharts();
     refreshValues();
+    setInterval(refreshValues, 30000); 
     
-    // Odświeżanie co 5 sekund
-    setInterval(refreshValues, 5000);
-
-    // Obsługa motywu (jasny/ciemny)
     const themeCheckbox = document.getElementById('checkbox');
     if (themeCheckbox) {
         themeCheckbox.addEventListener('change', () => {
