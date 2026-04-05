@@ -4,6 +4,9 @@ let charts = {};
 let currentInterval = "5min";
 let fullData = [];
 let isFetching = false;
+let lastKnownTimestamp = null;
+let serverOffset = 0;
+let nextExpectedUpdate = 0;
 
 function getVisiblePoints() { return 24; }
 
@@ -18,19 +21,74 @@ function getWeatherState(lux) {
 
 function updateCardsWithData(rowData) {
     if(!rowData) return;
-    document.getElementById('v1').innerText = parseFloat(rowData[1]).toFixed(1);
-    document.getElementById('v2').innerText = parseFloat(rowData[2]).toFixed(1);
-    document.getElementById('v3').innerText = Math.round(rowData[3]);
-    document.getElementById('v4').innerText = Math.round(rowData[4]);
-    document.getElementById('v5').innerText = parseFloat(rowData[5]).toFixed(2);
+    if(document.getElementById('v1')) document.getElementById('v1').innerText = parseFloat(rowData[1]).toFixed(1);
+    if(document.getElementById('v2')) document.getElementById('v2').innerText = parseFloat(rowData[2]).toFixed(1);
+    if(document.getElementById('v3')) document.getElementById('v3').innerText = Math.round(rowData[3]);
+    if(document.getElementById('v4')) document.getElementById('v4').innerText = Math.round(rowData[4]);
+    if(document.getElementById('v5')) document.getElementById('v5').innerText = parseFloat(rowData[5]).toFixed(2);
     
     const lux = parseFloat(rowData[4]);
     const uv = parseFloat(rowData[5]);
     const state = getWeatherState(lux);
-    document.getElementById('weather-emoji').innerText = state.emoji;
-    document.getElementById('weather-description').innerText = state.desc;
-    document.getElementById('bar-lux').style.width = Math.min((lux/50000)*100, 100) + "%";
-    document.getElementById('bar-uv').style.width = Math.min((uv/11)*100, 100) + "%";
+    if(document.getElementById('weather-emoji')) document.getElementById('weather-emoji').innerText = state.emoji;
+    if(document.getElementById('weather-description')) document.getElementById('weather-description').innerText = state.desc;
+    if(document.getElementById('bar-lux')) document.getElementById('bar-lux').style.width = Math.min((lux/50000)*100, 100) + "%";
+    if(document.getElementById('bar-uv')) document.getElementById('bar-uv').style.width = Math.min((uv/11)*100, 100) + "%";
+}
+
+async function syncWithServer() {
+    if (isFetching) return;
+    try {
+        const response = await fetch(`${scriptURL}?check=true&interval=${currentInterval}&t=${Date.now()}`);
+        const data = await response.json();
+        serverOffset = (data.serverTime || Date.now()) - Date.now();
+        if (lastKnownTimestamp !== data.last) {
+            lastKnownTimestamp = data.last;
+            await refreshValues();
+        } else {
+            updateStatus(true);
+        }
+    } catch (e) { 
+        console.error("Błąd sync:", e);
+        updateStatus(false); 
+    }
+}
+
+function runTick() {
+    const nowCorrected = Date.now() + serverOffset;
+    const now = new Date(nowCorrected);
+    let targetTime = 0;
+    if (currentInterval === "5min") {
+        targetTime = (Math.ceil(nowCorrected / 300000) * 300000);
+    } else if (currentInterval === "1h") {
+        targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0, 0).getTime();
+    } else if (currentInterval === "6h") {
+        let next6h = (Math.floor(now.getHours() / 6) + 1) * 6;
+        targetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), next6h, 0, 0, 0).getTime();
+    }
+    nextExpectedUpdate = targetTime;
+    let diff = Math.floor((targetTime - nowCorrected) / 1000);
+    let display;
+    if (diff <= 0 || diff > 21600) {
+        display = "WAIT";
+        if (Math.abs(diff) % 5 === 0) syncWithServer(); 
+    } else {
+        const hours = Math.floor(diff / 3600);
+        const mins = Math.floor((diff % 3600) / 60);
+        const secs = diff % 60;
+        if (hours > 0) {
+            display = `${hours}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        } else {
+            display = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+    }
+    for (let i = 1; i <= 5; i++) {
+        const el = document.getElementById(`timer-V${i}`);
+        if (el) {
+            el.innerText = display;
+            el.style.color = (display === "WAIT") ? "#f1c40f" : (diff <= 15 ? "#ff7b72" : "#7ee787");
+        }
+    }
 }
 
 function scrollToChart(chartId) {
@@ -86,7 +144,7 @@ function initCharts() {
 
     const options = (unit, sMin, sMax) => ({
         responsive: true, maintainAspectRatio: false,
-        animation: { duration: 250, easing: 'easeOutQuad' },
+        animation: { duration: 200 },
         interaction: { mode: 'index', intersect: false },
         onHover: (event, chartElement) => {
             if (chartElement.length > 0) {
@@ -103,7 +161,17 @@ function initCharts() {
         },
         scales: {
             y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139, 148, 158, 0.05)' }, suggestedMin: sMin, suggestedMax: sMax },
-            x: { ticks: { color: '#8b949e', maxTicksLimit: 10 }, grid: { display: false } }
+            x: { 
+                display: true, // ZMODYFIKOWANO: Oś X zawsze wymuszona
+                ticks: { 
+                    display: true, // ZMODYFIKOWANO: Etykiety zawsze widoczne
+                    color: '#8b949e', 
+                    maxTicksLimit: 8, 
+                    autoSkip: true,
+                    font: { size: 10 } 
+                }, 
+                grid: { display: false } 
+            }
         },
         plugins: { 
             legend: { display: false },
@@ -133,21 +201,31 @@ async function refreshValues() {
             updateCharts();
             updateStatus(true);
         }
-    } catch (e) { updateStatus(false); }
+    } catch (e) { 
+        console.error("Błąd refresh:", e);
+        updateStatus(false); 
+    }
     elements.forEach(el => el.classList.remove('loading-shimmer'));
     isFetching = false;
 }
 
 function updateCharts() {
     const pts = getVisiblePoints();
-    const labels = fullData.map(row => new Date(row[0]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+    const labels = fullData.map(row => {
+        const d = new Date(row[0]);
+        return d.toLocaleDateString([], {day:'2-digit', month:'2-digit'}) + " " + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    });
+    
     Object.keys(charts).forEach((key) => {
         const chart = charts[key];
         const idx = parseInt(key.replace('V', ''));
         chart.data.labels = labels;
         chart.data.datasets[0].data = fullData.map(row => parseFloat(row[idx]) || 0);
+        
         const slider = document.getElementById('scroll' + key);
-        if (slider && parseInt(slider.value) > 95) {
+        if (slider) {
+            // USUNIĘTO logikę ukrywania - suwak jest sterowany tylko przez CSS
+            slider.value = 100;
             chart.options.scales.x.min = Math.max(0, fullData.length - pts);
             chart.options.scales.x.max = fullData.length;
         }
@@ -159,11 +237,13 @@ function manualScroll(key, val) {
     const pts = getVisiblePoints();
     let range = Math.max(0, fullData.length - pts);
     let start = Math.floor((val / 100) * range);
+    
     Object.keys(charts).forEach(k => {
         charts[k].options.scales.x.min = start;
         charts[k].options.scales.x.max = start + pts;
         charts[k].update('none');
-        document.getElementById('scroll' + k).value = val;
+        const s = document.getElementById('scroll' + k);
+        if(s) s.value = val;
     });
     const targetIndex = Math.min(start + pts - 1, fullData.length - 1);
     updateCardsWithData(fullData[targetIndex]);
@@ -171,18 +251,18 @@ function manualScroll(key, val) {
 
 function changeInterval(type, btn) {
     if (currentInterval === type) return;
-    btn.style.transform = "scale(0.95)";
-    setTimeout(() => { btn.style.transform = "scale(1)"; }, 100);
     currentInterval = type;
     document.querySelectorAll('#interval-btns button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.chart-scroll').forEach(s => s.value = 100);
+    if(btn) btn.classList.add('active');
+    lastKnownTimestamp = null; 
     refreshValues();
+    syncWithServer();
 }
 
 function updateStatus(online) {
     const icon = document.getElementById('wifi-icon');
     const text = document.getElementById('status-text');
+    if (!icon || !text) return;
     if (online === 'loading') {
         icon.style.color = "#f1c40f";
         icon.classList.add('status-spin');
@@ -199,12 +279,20 @@ function updateStatus(online) {
 }
 
 function exportToCSV() {
-    let csv = "Data;Temperatura;Wilgotnosc;Cisnienie;Lux;UV\n";
-    fullData.forEach(row => csv += row[0] + ";" + row.slice(1).join(";").replace(/\./g, ',') + "\n");
+    let csv = "Data;Temperatura;Wilgotnosc;Cisnienie;Lux;UV\\n";
+    fullData.forEach(row => csv += row[0] + ";" + row.slice(1).join(";").replace(/\./g, ',') + "\\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
     link.download = "meteo_data.csv"; link.click();
 }
 
-document.getElementById('checkbox').addEventListener('change', () => document.body.classList.toggle('light-mode'));
-window.onload = () => { initCharts(); refreshValues(); setInterval(refreshValues, 30000); };
+if(document.getElementById('checkbox')) {
+    document.getElementById('checkbox').addEventListener('change', () => document.body.classList.toggle('light-mode'));
+}
+
+window.onload = () => { 
+    initCharts(); 
+    syncWithServer(); 
+    setInterval(runTick, 1000); 
+    setInterval(syncWithServer, 15000); 
+};
