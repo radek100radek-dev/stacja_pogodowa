@@ -2,70 +2,96 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Stacja Meteo ESP32</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteo Dashboard LIVE</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <div class="top-right-controls">
-            <div id="connection-status" class="status-box">
-                <span id="wifi-icon">●</span> 
-                <span id="status-text">Łączenie...</span>
-            </div>
-            
-            <button class="export-btn" onclick="exportToCSV()">Eksportuj CSV</button>
 
-            <div class="theme-switch-wrapper">
-                <label class="theme-switch" for="checkbox">
-                    <input type="checkbox" id="checkbox" />
-                    <div class="slider round">
-                        <span class="icon-sun">☀️</span>
-                        <span class="icon-moon">🌙</span>
-                    </div>
-                </label>
-            </div>
-        </div>
+<div class="container">
+    <div class="top-right-controls">
+        <button class="export-btn-fancy" onclick="exportToCSV()">
+            <i class="fa-solid fa-file-export"></i> Eksportuj CSV
+        </button>
 
-        <h1>Stacja Pogodowa ESP32</h1>
+        <input type="checkbox" id="checkbox" class="theme-checkbox">
+        <label for="checkbox" class="theme-label-fancy">
+            <i class="fa-solid fa-sun icon-sun"></i>
+            <i class="fa-solid fa-moon icon-moon"></i>
+            <div class="theme-ball"></div>
+        </label>
+    </div>
 
-        <div class="control-panel">
-            <div class="group-label">Interwał i Filtry</div>
-            <div class="timer-box">Nowy punkt za: <span id="timer">--:--</span></div>
-            
-            <div class="btn-group" id="interval-btns">
-                <button class="active" onclick="changeInterval(5, this)">5 min</button>
-                <button onclick="changeInterval(60, this)">1 h</button>
-                <button onclick="changeInterval(360, this)">6 h</button>
-            </div>
-
-            <div class="btn-group" id="filter-btns">
-                <button class="active" onclick="setFilter('all', this)">Doba</button>
-                <button onclick="setFilter('day', this)">Dzień</button>
-                <button onclick="setFilter('night', this)">Noc</button>
-            </div>
-        </div>
-
-        <div class="grid">
-            <div class="card"><h3>Temperatura</h3><div class="value"><span id="v1">--.-</span>°C</div></div>
-            <div class="card"><h3>Wilgotność</h3><div class="value"><span id="v2">--.-</span>%</div></div>
-            <div class="card"><h3>Ciśnienie</h3><div class="value"><span id="v3">----</span> hPa</div></div>
-        </div>
-
-        <div class="chart-container">
-            <canvas id="tempChart"></canvas>
-            <input type="range" class="chart-scroll" id="scrollV1" min="0" max="100" value="100" oninput="manualScroll('V1', this.value)">
-        </div>
-        <div class="chart-container">
-            <canvas id="humChart"></canvas>
-            <input type="range" class="chart-scroll" id="scrollV2" min="0" max="100" value="100" oninput="manualScroll('V2', this.value)">
-        </div>
-        <div class="chart-container">
-            <canvas id="presChart"></canvas>
-            <input type="range" class="chart-scroll" id="scrollV3" min="0" max="100" value="100" oninput="manualScroll('V3', this.value)">
+    <div class="weather-status-card" id="main-weather-card">
+        <span id="weather-emoji">☀️</span>
+        <div id="weather-description">Słonecznie</div>
+        
+        <div id="status-box">
+            <i id="wifi-icon" class="fa-solid fa-wifi"></i>
+            <span id="status-text">Inicjalizacja...</span>
         </div>
     </div>
-    <script src="script.js"></script>
+
+    <div class="btn-group" id="interval-btns">
+        <button class="active" onclick="changeInterval('5min', this)">
+            <span class="live-dot"></span> LIVE
+        </button>
+        <button onclick="changeInterval('1h', this)">1 Godzina</button>
+        <button onclick="changeInterval('1d', this)">24 Godziny</button>
+    </div>
+
+    <div class="grid">
+        <div class="card" onclick="scrollToChart('tempChart')">
+            <div class="label">Temperatura</div>
+            <div class="value"><span id="v1">--</span>°C</div>
+        </div>
+        <div class="card" onclick="scrollToChart('humChart')">
+            <div class="label">Wilgotność</div>
+            <div class="value"><span id="v2">--</span>%</div>
+        </div>
+        <div class="card" onclick="scrollToChart('presChart')">
+            <div class="label">Ciśnienie</div>
+            <div class="value"><span id="v3">--</span> hPa</div>
+        </div>
+        <div class="card" onclick="scrollToChart('luxChart')">
+            <div class="label">Oświetlenie (Lux)</div>
+            <div class="value"><span id="v4">--</span> Lux</div>
+            <div class="vis-container"><div id="bar-lux" class="vis-bar"></div></div>
+        </div>
+        <div class="card" onclick="scrollToChart('uvChart')">
+            <div class="label">Indeks UV</div>
+            <div class="value"><span id="v5">--</span> UV</div>
+            <div class="vis-container"><div id="bar-uv" class="vis-bar"></div></div>
+        </div>
+    </div>
+
+    <div class="chart-container main-chart">
+        <canvas id="tempChart"></canvas>
+        <input type="range" id="scrollV1" class="chart-scroll" min="0" max="100" value="100" oninput="manualScroll('V1', this.value)">
+    </div>
+
+    <div class="chart-grid">
+        <div class="chart-container small">
+            <canvas id="humChart"></canvas>
+            <input type="range" id="scrollV2" class="chart-scroll" min="0" max="100" value="100" oninput="manualScroll('V2', this.value)">
+        </div>
+        <div class="chart-container small">
+            <canvas id="presChart"></canvas>
+            <input type="range" id="scrollV3" class="chart-scroll" min="0" max="100" value="100" oninput="manualScroll('V3', this.value)">
+        </div>
+        <div class="chart-container small">
+            <canvas id="luxChart"></canvas>
+            <input type="range" id="scrollV4" class="chart-scroll" min="0" max="100" value="100" oninput="manualScroll('V4', this.value)">
+        </div>
+        <div class="chart-container small">
+            <canvas id="uvChart"></canvas>
+            <input type="range" id="scrollV5" class="chart-scroll" min="0" max="100" value="100" oninput="manualScroll('V5', this.value)">
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
