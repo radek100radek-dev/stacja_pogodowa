@@ -29,7 +29,6 @@ body {
 
 .container { max-width: 1200px; margin: 0 auto; }
 
-/* Karta Pogody - Układ Pionowy i Większe Ikony */
 .weather-status-card {
     background: var(--card-bg);
     padding: 40px;
@@ -45,25 +44,10 @@ body {
     gap: 15px;
 }
 
-#weather-emoji { 
-    font-size: 10rem; /* BARDZO DUŻA CHMURKA/SŁOŃCE */
-    line-height: 1;
-}
+#weather-emoji { font-size: 10rem; line-height: 1; }
+#weather-description { font-size: 1.8rem; font-weight: bold; }
+#status-box { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-weight: 600; }
 
-#weather-description {
-    font-size: 1.8rem;
-    font-weight: bold;
-}
-
-#status-box {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-dim);
-    font-weight: 600;
-}
-
-/* Animacje LIVE i Statusu */
 .live-dot {
     display: inline-block;
     width: 8px; height: 8px;
@@ -91,7 +75,6 @@ body {
 
 @keyframes shimmer-effect { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
-/* Pozostałe Style */
 .top-right-controls { display: flex; justify-content: flex-end; gap: 15px; margin-bottom: 20px; align-items: center; }
 .export-btn-fancy {
     background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
@@ -112,14 +95,49 @@ body {
 .card:hover { transform: translateY(-8px); border-color: var(--accent-blue); }
 .value { font-size: 1.8rem; font-weight: bold; color: var(--accent-blue); margin: 10px 0; }
 
-.chart-container { background: var(--card-bg); padding: 20px; border-radius: 16px; border: 1px solid var(--border-color); margin-bottom: 25px; position: relative; overflow: hidden; }
-.main-chart { height: 450px; }
-.small { height: 320px; }
+.chart-container { 
+    background: var(--card-bg); 
+    padding: 20px; 
+    border-radius: 16px; 
+    border: 1px solid var(--border-color); 
+    margin-bottom: 30px; 
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-chart { height: 480px; }
+.small { height: 360px; }
+
+.canvas-holder { flex-grow: 1; position: relative; min-height: 0; margin-bottom: 15px; }
+
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 @media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
 
-.chart-scroll { width: 100%; margin-top: 15px; cursor: pointer; height: 8px; background: var(--border-color); border-radius: 10px; outline: none; -webkit-appearance: none; }
-.chart-scroll::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; background: var(--accent-blue); border-radius: 50%; border: 3px solid var(--card-bg); }
+/* SUWAK - WYMUSZONA WIDOCZNOŚĆ CIĄGŁA */
+.visible-scroll {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 100%; 
+    height: 12px;
+    margin-top: 10px;
+    cursor: pointer; 
+    background: var(--border-color); 
+    border-radius: 10px; 
+    outline: none; 
+    -webkit-appearance: none;
+    z-index: 99;
+}
+
+.visible-scroll::-webkit-slider-thumb { 
+    -webkit-appearance: none; 
+    width: 24px; 
+    height: 24px; 
+    background: var(--accent-blue); 
+    border-radius: 50%; 
+    border: 3px solid var(--card-bg); 
+}
 
 .vis-container { width: 100%; height: 8px; background: #000; border-radius: 5px; margin-top: 10px; overflow: hidden; }
 .vis-bar { height: 100%; width: 0%; transition: width 1s ease; }
@@ -131,3 +149,12 @@ body {
 .btn-group button.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
 
 @keyframes glow { 0%, 100% { box-shadow: 0 0 5px var(--accent-blue); } 50% { box-shadow: 0 0 20px var(--accent-blue); } }
+
+.chart-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 10px; 
+    border-bottom: 1px solid rgba(139, 148, 158, 0.1); 
+    margin-bottom: 10px;
+}
