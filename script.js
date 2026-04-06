@@ -77,41 +77,55 @@ async function refreshValues() {
     return false;
 }
 
-// --- LICZNIK (TWOJA STRATEGIA: BUFOR + AGRESYWNE POBIERANIE) ---
+// --- LICZNIK (SZTYWNE GODZINY I PRAWIDŁOWE 5M 30S) ---
 function runTick() {
-    const now = Date.now() + serverOffset;
-    const intervalMs = (currentInterval === "1h") ? 3600000 : (currentInterval === "6h") ? 21600000 : 300000;
+    const now = new Date(Date.now() + serverOffset);
+    let targetTime = new Date(now);
+
+    if (currentInterval === "6h") {
+        // Sztywne godziny: 0, 6, 12, 18
+        const hours = now.getHours();
+        const next6h = [0, 6, 12, 18, 24].find(h => h > hours);
+        targetTime.setHours(next6h, 0, 0, 0);
+        targetTime = new Date(targetTime.getTime() + 30000); // +30s bufora
+    } else if (currentInterval === "1h") {
+        targetTime.setHours(now.getHours() + 1, 0, 0, 0);
+        targetTime = new Date(targetTime.getTime() + 30000); // +30s bufora
+    } else {
+        // Interwał 5min z buforem 30s (Cel: każda pełna 5-minutówka + 30s)
+        const currentMs = now.getTime();
+        const intervalMs = 300000; // 5 min
+        const lastFull5min = Math.floor(currentMs / intervalMs) * intervalMs;
+        let nextTarget = lastFull5min + 30000; // Dodaj 30s bufora do obecnej 5-minutówki
+
+        // Jeśli już minęła 30 sekunda bieżącej 5-minutówki, celuj w następną
+        if (currentMs >= nextTarget) {
+            nextTarget += intervalMs;
+        }
+        targetTime = new Date(nextTarget);
+    }
     
-    const lastUpdateEvent = Math.floor(now / intervalMs) * intervalMs;
-    const nextUpdateEvent = lastUpdateEvent + intervalMs;
-    
-    const secondsSinceLast = Math.floor((now - lastUpdateEvent) / 1000);
-    const secondsUntilNext = Math.floor((nextUpdateEvent - now) / 1000);
+    const secondsRemaining = Math.floor((targetTime.getTime() - now.getTime()) / 1000);
     
     let display;
     let color = "#7ee787";
 
-    // Reset flagi przed końcem cyklu
-    if (secondsUntilNext === 10) hasUpdatedThisCycle = false;
-
-    // Faza 1: CZEKAM (0-30s po terminie)
-    if (secondsSinceLast >= 0 && secondsSinceLast < 30 && !hasUpdatedThisCycle) {
-        display = "CZEKAM...";
-        color = "#f1c40f";
-    } 
-    // Faza 2: POBIERANIE (30-60s po terminie)
-    else if (secondsSinceLast >= 30 && secondsSinceLast < 60 && !hasUpdatedThisCycle) {
-        display = "POBIERANIE...";
-        color = "#ff7b72";
-        if (secondsSinceLast % 5 === 0 && !isFetching) {
+    // Faza pobierania (gdy licznik spadnie do 0 lub lekko poniżej przez lag)
+    if (secondsRemaining <= 0) {
+        if (!hasUpdatedThisCycle && !isFetching) {
+            display = "POBIERANIE...";
+            color = "#ff7b72";
             refreshValues().then(isNew => { if (isNew) hasUpdatedThisCycle = true; });
+        } else {
+            display = "0:00";
         }
-    }
-    // Faza 3: ODLICZANIE
-    else {
-        const h = Math.floor(secondsUntilNext / 3600);
-        const m = Math.floor((secondsUntilNext % 3600) / 60);
-        const s = secondsUntilNext % 60;
+    } else {
+        // Reset flagi aktualizacji, gdy jesteśmy daleko od punktu zero (np. nowa runda)
+        if (secondsRemaining > 60) hasUpdatedThisCycle = false;
+
+        const h = Math.floor(secondsRemaining / 3600);
+        const m = Math.floor((secondsRemaining % 3600) / 60);
+        const s = secondsRemaining % 60;
         display = (h > 0) ? `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}` : `${m}:${s < 10 ? '0' : ''}${s}`;
     }
 
@@ -121,7 +135,7 @@ function runTick() {
     });
 }
 
-// --- WYKRESY I PLUGINY (ZACHOWANE ANIMACJE) ---
+// --- WYKRESY I PLUGINY (RESPONSYWNE CHMURKI) ---
 const weatherIconPlugin = {
     id: 'weatherIconPlugin',
     afterDatasetsDraw(chart) {
@@ -129,7 +143,15 @@ const weatherIconPlugin = {
         const { ctx, data, scales: { x, y } } = chart;
         ctx.save();
         ctx.textAlign = 'center';
-        const step = currentInterval === "5min" ? 4 : 1;
+
+        const isMobile = window.innerWidth < 768;
+        let step;
+        if (currentInterval === "5min") {
+            step = isMobile ? 8 : 4; 
+        } else {
+            step = isMobile ? 4 : 1;
+        }
+
         data.datasets[0].data.forEach((value, index) => {
             const meta = chart.getDatasetMeta(0);
             if (meta.data[index] && !meta.data[index].skip && index % step === 0) {
@@ -137,11 +159,15 @@ const weatherIconPlugin = {
                 const yPos = y.getPixelForValue(value);
                 const lux = fullData[index] ? parseFloat(fullData[index][4]) : 0;
                 const state = getWeatherState(lux);
-                ctx.font = '24px Arial';
-                ctx.fillText(state.emoji, xPos, yPos - 35);
-                ctx.font = 'bold 12px Segoe UI';
+                
+                const fontSizeEmoji = isMobile ? '16px' : '24px';
+                const fontSizeText = isMobile ? '10px' : '12px';
+                
+                ctx.font = `${fontSizeEmoji} Arial`;
+                ctx.fillText(state.emoji, xPos, yPos - (isMobile ? 25 : 35));
+                ctx.font = `bold ${fontSizeText} Segoe UI`;
                 ctx.fillStyle = '#ff7b72';
-                ctx.fillText(value.toFixed(1) + "°", xPos, yPos - 18);
+                ctx.fillText(value.toFixed(1) + "°", xPos, yPos - (isMobile ? 12 : 18));
             }
         });
         ctx.restore();
@@ -165,7 +191,7 @@ function initCharts() {
 
     const options = (sMin, sMax) => ({
         responsive: true, maintainAspectRatio: false,
-        animation: { duration: 800 }, // ZACHOWANA ANIMACJA
+        animation: { duration: 800 },
         interaction: { mode: 'index', intersect: false },
         onHover: (event, chartElement) => {
             if (chartElement.length > 0) {
@@ -220,7 +246,6 @@ function updateCharts() {
     });
 }
 
-// --- INTERAKCJA UŻYTKOWNIKA ---
 function manualScroll(key, val) {
     const pts = getVisiblePoints();
     let start = Math.floor((val / 100) * Math.max(0, fullData.length - pts));
@@ -271,15 +296,6 @@ function updateStatus(online) {
     }
 }
 
-function exportToCSV() {
-    let csv = "Data;Temperatura;Wilgotnosc;Cisnienie;Lux;UV\n";
-    fullData.forEach(row => csv += row[0] + ";" + row.slice(1).join(";").replace(/\./g, ',') + "\n");
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
-    link.download = "meteo_data.csv"; link.click();
-}
-
-// --- START ---
 if(document.getElementById('checkbox')) {
     document.getElementById('checkbox').addEventListener('change', () => document.body.classList.toggle('light-mode'));
 }
