@@ -1,307 +1,2963 @@
-const scriptURL = "https://script.google.com/macros/s/AKfycby0E-JWzMjlf2RsRA_viuL1DB7Ih7PaZPdnZoqholUTtMdBwFv4C8gYOolQhtmdSWvL0g/exec";
+const scriptURL =
+  "https://script.google.com/macros/s/AKfycbxKCkvYVHkca_BcfCpZuFOHE8GNDuAwBTjdQ37_YRJbddnDO2F6pIcpVABwm_x-bZkV5g/exec";
+
 
 let charts = {};
-let currentInterval = "5min";
-let fullData = [];
-let isFetching = false;
-let lastKnownTimestamp = null;
-let serverOffset = 0;
-let hasUpdatedThisCycle = false;
 
-function getVisiblePoints() { return 24; }
+let currentInterval =
+  "5min";
 
-// --- DEKORACJE I POGODA ---
-function getWeatherState(lux) {
-    const hour = new Date().getHours();
-    const isNight = hour < 6 || hour > 20;
-    if (isNight && lux < 100) return { emoji: "🌙", desc: "Noc" };
-    if (lux < 300) return { emoji: "☁️", desc: "Pochmurno" };
-    if (lux < 2500) return { emoji: "🌥️", desc: "Zachmurzenie" };
-    return { emoji: "☀️", desc: "Słonecznie" };
-}
+let fullData =
+  [];
 
-function updateCardsWithData(rowData) {
-    if(!rowData) return;
-    const fields = ['v1', 'v2', 'v3', 'v4', 'v5'];
-    fields.forEach((id, i) => {
-        const el = document.getElementById(id);
-        if(el) {
-            const val = parseFloat(rowData[i+1]);
-            el.innerText = (i === 4) ? val.toFixed(2) : (i < 2 ? val.toFixed(1) : Math.round(val));
-        }
-    });
-    
-    const lux = parseFloat(rowData[4]);
-    const uv = parseFloat(rowData[5]);
-    const state = getWeatherState(lux);
-    if(document.getElementById('weather-emoji')) document.getElementById('weather-emoji').innerText = state.emoji;
-    if(document.getElementById('weather-description')) document.getElementById('weather-description').innerText = state.desc;
-    if(document.getElementById('bar-lux')) document.getElementById('bar-lux').style.width = Math.min((lux/50000)*100, 100) + "%";
-    if(document.getElementById('bar-uv')) document.getElementById('bar-uv').style.width = Math.min((uv/11)*100, 100) + "%";
-}
+let isFetching =
+  false;
 
-// --- LOGIKA POBIERANIA ---
-async function refreshValues() {
-    if (isFetching) return false;
-    isFetching = true;
-    
-    const elements = document.querySelectorAll('.chart-container, .card, .weather-status-card');
-    elements.forEach(el => el.classList.add('loading-shimmer'));
-    updateStatus('loading');
+let lastKnownTimestamp =
+  null;
 
-    try {
-        const response = await fetch(`${scriptURL}?read=true&interval=${currentInterval}&t=${Date.now()}`);
-        const data = await response.json();
-        if (data && data.length > 0) {
-            const newestRow = data[data.length - 1];
-            
-            if (newestRow[0] !== lastKnownTimestamp) {
-                fullData = data;
-                lastKnownTimestamp = newestRow[0];
-                updateCardsWithData(newestRow);
-                updateCharts();
-                updateStatus(true);
-                elements.forEach(el => el.classList.remove('loading-shimmer'));
-                isFetching = false;
-                return true; 
-            }
-        }
-        updateStatus(true);
-    } catch (e) { 
-        console.error("Błąd refresh:", e);
-        updateStatus(false);
-    }
-    
-    elements.forEach(el => el.classList.remove('loading-shimmer'));
-    isFetching = false;
-    return false;
-}
+let lastAutoFetchKey =
+  "";
 
-// --- LICZNIK (SZTYWNE GODZINY I PRAWIDŁOWE 5M 30S) ---
-function runTick() {
-    const now = new Date(Date.now() + serverOffset);
-    let targetTime = new Date(now);
 
-    if (currentInterval === "6h") {
-        // Sztywne godziny: 0, 6, 12, 18
-        const hours = now.getHours();
-        const next6h = [0, 6, 12, 18, 24].find(h => h > hours);
-        targetTime.setHours(next6h, 0, 0, 0);
-        targetTime = new Date(targetTime.getTime() + 30000); // +30s bufora
-    } else if (currentInterval === "1h") {
-        targetTime.setHours(now.getHours() + 1, 0, 0, 0);
-        targetTime = new Date(targetTime.getTime() + 30000); // +30s bufora
-    } else {
-        // Interwał 5min z buforem 30s (Cel: każda pełna 5-minutówka + 30s)
-        const currentMs = now.getTime();
-        const intervalMs = 300000; // 5 min
-        const lastFull5min = Math.floor(currentMs / intervalMs) * intervalMs;
-        let nextTarget = lastFull5min + 30000; // Dodaj 30s bufora do obecnej 5-minutówki
+const directionNames = [
+  "N",
+  "NE",
+  "E",
+  "SE",
+  "S",
+  "SW",
+  "W",
+  "NW"
+];
 
-        // Jeśli już minęła 30 sekunda bieżącej 5-minutówki, celuj w następną
-        if (currentMs >= nextTarget) {
-            nextTarget += intervalMs;
-        }
-        targetTime = new Date(nextTarget);
-    }
-    
-    const secondsRemaining = Math.floor((targetTime.getTime() - now.getTime()) / 1000);
-    
-    let display;
-    let color = "#7ee787";
 
-    // Faza pobierania (gdy licznik spadnie do 0 lub lekko poniżej przez lag)
-    if (secondsRemaining <= 0) {
-        if (!hasUpdatedThisCycle && !isFetching) {
-            display = "POBIERANIE...";
-            color = "#ff7b72";
-            refreshValues().then(isNew => { if (isNew) hasUpdatedThisCycle = true; });
-        } else {
-            display = "0:00";
-        }
-    } else {
-        // Reset flagi aktualizacji, gdy jesteśmy daleko od punktu zero (np. nowa runda)
-        if (secondsRemaining > 60) hasUpdatedThisCycle = false;
+const BATTERY_MIN_V =
+  4.50;
 
-        const h = Math.floor(secondsRemaining / 3600);
-        const m = Math.floor((secondsRemaining % 3600) / 60);
-        const s = secondsRemaining % 60;
-        display = (h > 0) ? `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}` : `${m}:${s < 10 ? '0' : ''}${s}`;
-    }
+const BATTERY_MAX_V =
+  5.20;
 
-    document.querySelectorAll('[id^="timer-V"]').forEach(el => {
-        el.innerText = display;
-        el.style.color = color;
-    });
-}
 
-// --- WYKRESY I PLUGINY (RESPONSYWNE CHMURKI) ---
-const weatherIconPlugin = {
-    id: 'weatherIconPlugin',
-    afterDatasetsDraw(chart) {
-        if (chart.canvas.id !== 'tempChart' || fullData.length === 0) return;
-        const { ctx, data, scales: { x, y } } = chart;
-        ctx.save();
-        ctx.textAlign = 'center';
+const VISIBLE_POINTS =
+  24;
 
-        const isMobile = window.innerWidth < 768;
-        let step;
-        if (currentInterval === "5min") {
-            step = isMobile ? 8 : 4; 
-        } else {
-            step = isMobile ? 4 : 1;
-        }
 
-        data.datasets[0].data.forEach((value, index) => {
-            const meta = chart.getDatasetMeta(0);
-            if (meta.data[index] && !meta.data[index].skip && index % step === 0) {
-                const xPos = x.getPixelForValue(index);
-                const yPos = y.getPixelForValue(value);
-                const lux = fullData[index] ? parseFloat(fullData[index][4]) : 0;
-                const state = getWeatherState(lux);
-                
-                const fontSizeEmoji = isMobile ? '16px' : '24px';
-                const fontSizeText = isMobile ? '10px' : '12px';
-                
-                ctx.font = `${fontSizeEmoji} Arial`;
-                ctx.fillText(state.emoji, xPos, yPos - (isMobile ? 25 : 35));
-                ctx.font = `bold ${fontSizeText} Segoe UI`;
-                ctx.fillStyle = '#ff7b72';
-                ctx.fillText(value.toFixed(1) + "°", xPos, yPos - (isMobile ? 12 : 18));
-            }
-        });
-        ctx.restore();
-    }
+const chartKeyByCanvas = {
+
+  tempChart:
+    "V1",
+
+  humChart:
+    "V2",
+
+  presChart:
+    "V3",
+
+  luxChart:
+    "V4",
+
+  uvChart:
+    "V5",
+
+  windChart:
+    "V6",
+
+  dirChart:
+    "V7",
+
+  rainChart:
+    "V8"
 };
+
+
+// =====================================================
+// BATERIA
+// =====================================================
+
+function calculateBatteryPercent(
+  voltage
+) {
+
+  const percent =
+    Math.round(
+      (
+        voltage -
+        BATTERY_MIN_V
+      )
+      /
+      (
+        BATTERY_MAX_V -
+        BATTERY_MIN_V
+      )
+      *
+      100
+    );
+
+
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      percent
+    )
+  );
+}
+
+
+function updateBattery(
+  value
+) {
+
+  const voltage =
+    parseFloat(
+      value
+    );
+
+
+  if (
+    !Number.isFinite(
+      voltage
+    )
+  ) {
+
+    return;
+  }
+
+
+  const percent =
+    calculateBatteryPercent(
+      voltage
+    );
+
+
+  const fill =
+    document.getElementById(
+      "battery-fill"
+    );
+
+
+  const percentText =
+    document.getElementById(
+      "battery-percent"
+    );
+
+
+  const voltageText =
+    document.getElementById(
+      "battery-voltage"
+    );
+
+
+  if (
+    percentText
+  ) {
+
+    percentText.innerText =
+      `${percent}%`;
+  }
+
+
+  if (
+    voltageText
+  ) {
+
+    voltageText.innerText =
+      `${voltage.toFixed(2)} V`;
+  }
+
+
+  if (
+    fill
+  ) {
+
+    fill.style.width =
+      `${percent}%`;
+
+
+    fill.style.background =
+      percent <= 20
+      ?
+      "#ff4d4d"
+      :
+      percent <= 50
+      ?
+      "#f1c40f"
+      :
+      "#7ee787";
+  }
+}
+
+
+// =====================================================
+// DATA AKTUALNA
+// =====================================================
+
+function updateCurrentDate() {
+
+  const now =
+    new Date();
+
+
+  const days = [
+
+    "Niedziela",
+    "Poniedziałek",
+    "Wtorek",
+    "Środa",
+    "Czwartek",
+    "Piątek",
+    "Sobota"
+
+  ];
+
+
+  const element =
+    document.getElementById(
+      "current-date"
+    );
+
+
+  if (
+    !element
+  ) {
+
+    return;
+  }
+
+
+  const date =
+    `${String(now.getDate()).padStart(2, "0")}.`
+    +
+    `${String(now.getMonth() + 1).padStart(2, "0")}.`
+    +
+    `${now.getFullYear()}`;
+
+
+  const time =
+    `${String(now.getHours()).padStart(2, "0")}:`
+    +
+    `${String(now.getMinutes()).padStart(2, "0")}:`
+    +
+    `${String(now.getSeconds()).padStart(2, "0")}`;
+
+
+  element.innerHTML =
+    `${days[now.getDay()]}, ${date}<br>${time}`;
+}
+
+
+// =====================================================
+// FORMAT DATY POMIARU
+// =====================================================
+
+function formatDateTime(
+  timestamp,
+  withSeconds = true
+) {
+
+  const date =
+    new Date(
+      Number(
+        timestamp
+      )
+    );
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+
+    return "--";
+  }
+
+
+  const d =
+    String(
+      date.getDate()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const m =
+    String(
+      date.getMonth() + 1
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const y =
+    date.getFullYear();
+
+
+  const h =
+    String(
+      date.getHours()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const min =
+    String(
+      date.getMinutes()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const s =
+    String(
+      date.getSeconds()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  if (
+    withSeconds
+  ) {
+
+    return `${d}.${m}.${y} ${h}:${min}:${s}`;
+  }
+
+
+  return `${d}.${m}.${y} ${h}:${min}`;
+}
+
+
+// =====================================================
+// DATA NA OSI X
+// =====================================================
+
+function formatAxisLabel(
+  timestamp
+) {
+
+  const date =
+    new Date(
+      Number(
+        timestamp
+      )
+    );
+
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+
+    return "";
+  }
+
+
+  const d =
+    String(
+      date.getDate()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const m =
+    String(
+      date.getMonth() + 1
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const h =
+    String(
+      date.getHours()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  const min =
+    String(
+      date.getMinutes()
+    )
+    .padStart(
+      2,
+      "0"
+    );
+
+
+  return [
+
+    `${d}.${m}`,
+
+    `${h}:${min}`
+
+  ];
+}
+
+
+// =====================================================
+// KIERUNEK WIATRU
+// =====================================================
+
+function directionToNumber(
+  dir
+) {
+
+  if (
+    dir === undefined ||
+    dir === null
+  ) {
+
+    return null;
+  }
+
+
+  const index =
+    directionNames.indexOf(
+      String(
+        dir
+      )
+      .trim()
+      .toUpperCase()
+    );
+
+
+  return index >= 0
+  ?
+  index
+  :
+  null;
+}
+
+
+function numberToDirection(
+  value
+) {
+
+  return directionNames[
+    Math.round(
+      Number(
+        value
+      )
+    )
+  ]
+  ??
+  "";
+}
+
+
+// =====================================================
+// STAN POGODY DLA KONKRETNEGO POMIARU
+// =====================================================
+
+function getWeatherState(
+  lux,
+  rain,
+  timestamp = Date.now()
+) {
+
+  const luxValue =
+    Number.isFinite(
+      Number(
+        lux
+      )
+    )
+    ?
+    Number(
+      lux
+    )
+    :
+    0;
+
+
+  const rainValue =
+    Number.isFinite(
+      Number(
+        rain
+      )
+    )
+    ?
+    Number(
+      rain
+    )
+    :
+    0;
+
+
+  const date =
+    new Date(
+      Number(
+        timestamp
+      )
+    );
+
+
+  const hour =
+    Number.isNaN(
+      date.getTime()
+    )
+    ?
+    new Date().getHours()
+    :
+    date.getHours();
+
+
+  const night =
+    hour < 6 ||
+    hour > 20;
+
+
+  // =============================================
+  // ULEWA
+  // =============================================
+
+  if (
+    rainValue >= 70
+  ) {
+
+    return {
+
+      emoji:
+        "⛈️",
+
+      desc:
+        "Ulewa"
+
+    };
+  }
+
+
+  // =============================================
+  // DESZCZ
+  // =============================================
+
+  if (
+    rainValue >= 25
+  ) {
+
+    return {
+
+      emoji:
+        "🌧️",
+
+      desc:
+        "Deszcz"
+
+    };
+  }
+
+
+  // =============================================
+  // LEKKI DESZCZ
+  // =============================================
+
+  if (
+    rainValue >= 5
+  ) {
+
+    return {
+
+      emoji:
+        "🌦️",
+
+      desc:
+        "Przelotny deszcz"
+
+    };
+  }
+
+
+  // =============================================
+  // NOC
+  // =============================================
+
+  if (
+    night &&
+    luxValue < 100
+  ) {
+
+    return {
+
+      emoji:
+        "🌙",
+
+      desc:
+        "Noc"
+
+    };
+  }
+
+
+  // =============================================
+  // POCHMURNO
+  // =============================================
+
+  if (
+    luxValue < 300
+  ) {
+
+    return {
+
+      emoji:
+        "☁️",
+
+      desc:
+        "Pochmurno"
+
+    };
+  }
+
+
+  // =============================================
+  // ZACHMURZENIE
+  // =============================================
+
+  if (
+    luxValue < 2500
+  ) {
+
+    return {
+
+      emoji:
+        "🌥️",
+
+      desc:
+        "Zachmurzenie"
+
+    };
+  }
+
+
+  // =============================================
+  // SŁOŃCE
+  // =============================================
+
+  return {
+
+    emoji:
+      "☀️",
+
+    desc:
+      "Słonecznie"
+
+  };
+}
+
+
+// =====================================================
+// HISTORYCZNE IKONY POGODY
+// =====================================================
+
+const weatherHistoryPlugin = {
+
+  id:
+    "weatherHistory",
+
+
+  afterDraw(
+    chart
+  ) {
+
+    if (
+      !Array.isArray(
+        fullData
+      ) ||
+      fullData.length === 0
+    ) {
+
+      return;
+    }
+
+
+    const meta =
+      chart.getDatasetMeta(
+        0
+      );
+
+
+    const area =
+      chart.chartArea;
+
+
+    if (
+      !meta?.data?.length ||
+      !area
+    ) {
+
+      return;
+    }
+
+
+    // =============================================
+    // PUNKTY WIDOCZNE AKTUALNIE NA WYKRESIE
+    // =============================================
+
+    const visible =
+      [];
+
+
+    meta.data.forEach(
+      (
+        point,
+        index
+      ) => {
+
+        if (
+          !point
+        ) {
+
+          return;
+        }
+
+
+        if (
+          point.x < area.left ||
+          point.x > area.right
+        ) {
+
+          return;
+        }
+
+
+        const row =
+          fullData[
+            index
+          ];
+
+
+        if (
+          !row
+        ) {
+
+          return;
+        }
+
+
+        visible.push({
+
+          point:
+            point,
+
+          index:
+            index,
+
+          weather:
+            getWeatherState(
+              row[4],
+              row[8],
+              row[0]
+            )
+
+        });
+      }
+    );
+
+
+    if (
+      !visible.length
+    ) {
+
+      return;
+    }
+
+
+    // =============================================
+    // WYBÓR IKON
+    // =============================================
+
+    const selectedIndexes =
+      new Set(
+        [
+          0,
+          visible.length - 1
+        ]
+      );
+
+
+    // Zawsze pokazuj zmianę pogody.
+
+    for (
+      let i = 1;
+      i < visible.length;
+      i++
+    ) {
+
+      if (
+        visible[i - 1].weather.emoji
+        !==
+        visible[i].weather.emoji
+      ) {
+
+        selectedIndexes.add(
+          i - 1
+        );
+
+
+        selectedIndexes.add(
+          i
+        );
+      }
+    }
+
+
+    // =============================================
+    // DODAJ KILKA IKON POŚREDNICH
+    // =============================================
+
+    const usableWidth =
+      area.right -
+      area.left;
+
+
+    const maxIcons =
+      Math.max(
+        4,
+        Math.floor(
+          usableWidth /
+          85
+        )
+      );
+
+
+    const step =
+      Math.max(
+        1,
+        Math.ceil(
+          visible.length /
+          maxIcons
+        )
+      );
+
+
+    for (
+      let i = 0;
+      i < visible.length;
+      i += step
+    ) {
+
+      selectedIndexes.add(
+        i
+      );
+    }
+
+
+    const selected =
+      Array.from(
+        selectedIndexes
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+        a - b
+      );
+
+
+    // =============================================
+    // RYSOWANIE
+    // =============================================
+
+    const ctx =
+      chart.ctx;
+
+
+    const styles =
+      getComputedStyle(
+        document.body
+      );
+
+
+    const cardColor =
+      styles
+      .getPropertyValue(
+        "--card-bg"
+      )
+      .trim()
+      ||
+      "#161b22";
+
+
+    const borderColor =
+      styles
+      .getPropertyValue(
+        "--border-color"
+      )
+      .trim()
+      ||
+      "#30363d";
+
+
+    // Ikony są nad właściwą siatką wykresu.
+
+    const iconY =
+      area.top -
+      22;
+
+
+    ctx.save();
+
+
+    selected.forEach(
+      selectedIndex => {
+
+        const item =
+          visible[
+            selectedIndex
+          ];
+
+
+        if (
+          !item
+        ) {
+
+          return;
+        }
+
+
+        const x =
+          item.point.x;
+
+
+        // =========================================
+        // TŁO IKONY
+        // =========================================
+
+        ctx.beginPath();
+
+
+        ctx.arc(
+          x,
+          iconY,
+          13,
+          0,
+          Math.PI * 2
+        );
+
+
+        ctx.fillStyle =
+          cardColor;
+
+
+        ctx.fill();
+
+
+        ctx.strokeStyle =
+          borderColor;
+
+
+        ctx.lineWidth =
+          1;
+
+
+        ctx.stroke();
+
+
+        // =========================================
+        // MAŁY ŁĄCZNIK
+        // =========================================
+
+        ctx.beginPath();
+
+
+        ctx.moveTo(
+          x,
+          iconY + 14
+        );
+
+
+        ctx.lineTo(
+          x,
+          area.top - 3
+        );
+
+
+        ctx.strokeStyle =
+          "rgba(139,148,158,0.22)";
+
+
+        ctx.lineWidth =
+          1;
+
+
+        ctx.stroke();
+
+
+        // =========================================
+        // EMOJI
+        // =========================================
+
+        ctx.font =
+          chart.width < 650
+          ?
+          "15px Segoe UI Emoji, Apple Color Emoji, sans-serif"
+          :
+          "17px Segoe UI Emoji, Apple Color Emoji, sans-serif";
+
+
+        ctx.textAlign =
+          "center";
+
+
+        ctx.textBaseline =
+          "middle";
+
+
+        ctx.fillText(
+          item.weather.emoji,
+          x,
+          iconY
+        );
+      }
+    );
+
+
+    ctx.restore();
+  }
+};
+
+
+Chart.register(
+  weatherHistoryPlugin
+);
+
+
+// =====================================================
+// KAFELKI - POMOCNICZE
+// =====================================================
+
+function setNumericText(
+  id,
+  value,
+  decimals
+) {
+
+  const element =
+    document.getElementById(
+      id
+    );
+
+
+  if (
+    !element
+  ) {
+
+    return;
+  }
+
+
+  const number =
+    parseFloat(
+      value
+    );
+
+
+  element.innerText =
+    Number.isFinite(
+      number
+    )
+    ?
+    number.toFixed(
+      decimals
+    )
+    :
+    "--";
+}
+
+
+// =====================================================
+// DATA NAD KONKRETNYM WYKRESEM
+// =====================================================
+
+function updateChartDate(
+  key,
+  row
+) {
+
+  if (
+    !key ||
+    !row
+  ) {
+
+    return;
+  }
+
+
+  const element =
+    document.getElementById(
+      `chart-date-${key}`
+    );
+
+
+  if (
+    element
+  ) {
+
+    element.innerText =
+      `Pomiar: ${formatDateTime(row[0])}`;
+  }
+}
+
+
+// =====================================================
+// PRZYWRÓCENIE NAJNOWSZEGO POMIARU
+// =====================================================
+
+function restoreChartDate(
+  chart
+) {
+
+  if (
+    !fullData.length
+  ) {
+
+    return;
+  }
+
+
+  const key =
+    chartKeyByCanvas[
+      chart.canvas.id
+    ];
+
+
+  updateChartDate(
+    key,
+    fullData[
+      fullData.length - 1
+    ]
+  );
+}
+
+
+// =====================================================
+// AKTUALIZACJA KAFELKÓW
+// =====================================================
+
+function updateCardsWithData(
+  row
+) {
+
+  if (
+    !row
+  ) {
+
+    return;
+  }
+
+
+  setNumericText(
+    "v1",
+    row[1],
+    1
+  );
+
+
+  setNumericText(
+    "v2",
+    row[2],
+    1
+  );
+
+
+  setNumericText(
+    "v3",
+    row[3],
+    0
+  );
+
+
+  setNumericText(
+    "v4",
+    row[4],
+    0
+  );
+
+
+  setNumericText(
+    "v5",
+    row[5],
+    2
+  );
+
+
+  setNumericText(
+    "v-wind",
+    row[6],
+    2
+  );
+
+
+  setNumericText(
+    "v-rain",
+    row[8],
+    1
+  );
+
+
+  const direction =
+    document.getElementById(
+      "v-dir"
+    );
+
+
+  if (
+    direction
+  ) {
+
+    direction.innerText =
+      row[7]
+      ||
+      "--";
+  }
+
+
+  const lux =
+    parseFloat(
+      row[4]
+    );
+
+
+  const uv =
+    parseFloat(
+      row[5]
+    );
+
+
+  const weather =
+    getWeatherState(
+      row[4],
+      row[8],
+      row[0]
+    );
+
+
+  const weatherEmoji =
+    document.getElementById(
+      "weather-emoji"
+    );
+
+
+  const weatherDescription =
+    document.getElementById(
+      "weather-description"
+    );
+
+
+  const lastMeasurement =
+    document.getElementById(
+      "last-measurement"
+    );
+
+
+  if (
+    weatherEmoji
+  ) {
+
+    weatherEmoji.innerText =
+      weather.emoji;
+  }
+
+
+  if (
+    weatherDescription
+  ) {
+
+    weatherDescription.innerText =
+      weather.desc;
+  }
+
+
+  if (
+    lastMeasurement
+  ) {
+
+    lastMeasurement.innerText =
+      `Ostatni pomiar: ${formatDateTime(row[0])}`;
+  }
+
+
+  // =============================================
+  // PASEK LUX
+  // =============================================
+
+  if (
+    Number.isFinite(
+      lux
+    )
+  ) {
+
+    const bar =
+      document.getElementById(
+        "bar-lux"
+      );
+
+
+    if (
+      bar
+    ) {
+
+      bar.style.width =
+        `${Math.min(
+          lux /
+          50000 *
+          100,
+          100
+        )}%`;
+    }
+  }
+
+
+  // =============================================
+  // PASEK UV
+  // =============================================
+
+  if (
+    Number.isFinite(
+      uv
+    )
+  ) {
+
+    const bar =
+      document.getElementById(
+        "bar-uv"
+      );
+
+
+    if (
+      bar
+    ) {
+
+      bar.style.width =
+        `${Math.min(
+          uv /
+          11 *
+          100,
+          100
+        )}%`;
+    }
+  }
+
+
+  // =============================================
+  // DATA NA KAŻDYM WYKRESIE
+  // =============================================
+
+  for (
+    let i = 1;
+    i <= 8;
+    i++
+  ) {
+
+    updateChartDate(
+      `V${i}`,
+      row
+    );
+  }
+}
+
+
+// =====================================================
+// NAJNOWSZY POMIAR
+// =====================================================
+
+async function refreshExtraValues() {
+
+  try {
+
+    const response =
+      await fetch(
+        `${scriptURL}?latest=true&t=${Date.now()}`,
+        {
+          cache:
+            "no-store"
+        }
+      );
+
+
+    if (
+      !response.ok
+    ) {
+
+      throw new Error(
+        response.status
+      );
+    }
+
+
+    const row =
+      await response.json();
+
+
+    if (
+      Array.isArray(
+        row
+      )
+      &&
+      row.length >= 10
+    ) {
+
+      updateCardsWithData(
+        row
+      );
+
+
+      updateBattery(
+        row[9]
+      );
+    }
+
+  }
+  catch (
+    error
+  ) {
+
+    console.error(
+      "Błąd danych LIVE:",
+      error
+    );
+  }
+}
+
+
+// =====================================================
+// DANE DO WYKRESÓW
+// =====================================================
+
+async function refreshValues() {
+
+  if (
+    isFetching
+  ) {
+
+    return false;
+  }
+
+
+  isFetching =
+    true;
+
+
+  updateStatus(
+    "loading"
+  );
+
+
+  try {
+
+    const response =
+      await fetch(
+
+        `${scriptURL}?read=true&interval=${currentInterval}&t=${Date.now()}`,
+
+        {
+          cache:
+            "no-store"
+        }
+      );
+
+
+    if (
+      !response.ok
+    ) {
+
+      throw new Error(
+        response.status
+      );
+    }
+
+
+    const data =
+      await response.json();
+
+
+    if (
+      !Array.isArray(
+        data
+      )
+      ||
+      data.length === 0
+    ) {
+
+      updateStatus(
+        false
+      );
+
+
+      return false;
+    }
+
+
+    fullData =
+      data;
+
+
+    const newestRow =
+      data[
+        data.length - 1
+      ];
+
+
+    updateCardsWithData(
+      newestRow
+    );
+
+
+    updateCharts();
+
+
+    updateStatus(
+      true
+    );
+
+
+    const timestamp =
+      newestRow[0];
+
+
+    const newData =
+      timestamp !==
+      lastKnownTimestamp;
+
+
+    lastKnownTimestamp =
+      timestamp;
+
+
+    return newData;
+
+  }
+  catch (
+    error
+  ) {
+
+    console.error(
+      "Błąd pobierania:",
+      error
+    );
+
+
+    updateStatus(
+      false
+    );
+
+
+    return false;
+
+  }
+  finally {
+
+    isFetching =
+      false;
+  }
+}
+
+
+// =====================================================
+// NASTĘPNA AKTUALIZACJA
+// =====================================================
+
+function getNextExpectedUpdate(
+  now = new Date()
+) {
+
+  const target =
+    new Date(
+      now
+    );
+
+
+  // =============================================
+  // 6 GODZIN
+  // =============================================
+
+  if (
+    currentInterval ===
+    "6h"
+  ) {
+
+    const nextBlock =
+      (
+        Math.floor(
+          now.getHours() /
+          6
+        )
+        +
+        1
+      )
+      *
+      6;
+
+
+    if (
+      nextBlock >= 24
+    ) {
+
+      target.setDate(
+        target.getDate() + 1
+      );
+
+
+      target.setHours(
+        0,
+        0,
+        30,
+        0
+      );
+
+    }
+    else {
+
+      target.setHours(
+        nextBlock,
+        0,
+        30,
+        0
+      );
+    }
+
+
+    return target;
+  }
+
+
+  // =============================================
+  // 1 GODZINA
+  // =============================================
+
+  if (
+    currentInterval ===
+    "1h"
+  ) {
+
+    target.setHours(
+      now.getHours() + 1,
+      0,
+      30,
+      0
+    );
+
+
+    return target;
+  }
+
+
+  // =============================================
+  // 5 MINUT
+  // =============================================
+
+  const interval =
+    5 *
+    60 *
+    1000;
+
+
+  const next =
+    Math.floor(
+      now.getTime() /
+      interval
+    )
+    *
+    interval
+    +
+    interval
+    +
+    30000;
+
+
+  return new Date(
+    next
+  );
+}
+
+
+// =====================================================
+// LICZNIK
+// =====================================================
+
+function runTick() {
+
+  const now =
+    new Date();
+
+
+  const target =
+    getNextExpectedUpdate(
+      now
+    );
+
+
+  const seconds =
+    Math.max(
+      0,
+      Math.floor(
+        (
+          target.getTime()
+          -
+          now.getTime()
+        )
+        /
+        1000
+      )
+    );
+
+
+  const h =
+    Math.floor(
+      seconds /
+      3600
+    );
+
+
+  const m =
+    Math.floor(
+      (
+        seconds %
+        3600
+      )
+      /
+      60
+    );
+
+
+  const s =
+    seconds %
+    60;
+
+
+  const display =
+    h > 0
+    ?
+    `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    :
+    `${m}:${String(s).padStart(2, "0")}`;
+
+
+  document.querySelectorAll(
+    '[id^="timer-V"]'
+  )
+  .forEach(
+    element => {
+
+      element.innerText =
+        display;
+
+
+      element.style.color =
+        "#7ee787";
+    }
+  );
+
+
+  const fetchKey =
+    `${currentInterval}-${target.getTime()}`;
+
+
+  if (
+    seconds <= 2
+    &&
+    lastAutoFetchKey !==
+    fetchKey
+  ) {
+
+    lastAutoFetchKey =
+      fetchKey;
+
+
+    refreshValues();
+  }
+}
+
+
+// =====================================================
+// DATASET
+// =====================================================
+
+function createDataset(
+  label,
+  color,
+  stepped = false
+) {
+
+  return {
+
+    label:
+      label,
+
+    data:
+      [],
+
+    borderColor:
+      color,
+
+    borderWidth:
+      4,
+
+    fill:
+      true,
+
+    tension:
+      stepped
+      ?
+      0
+      :
+      0.35,
+
+    stepped:
+      stepped,
+
+    pointRadius:
+      0,
+
+    pointHoverRadius:
+      6,
+
+    pointHitRadius:
+      18,
+
+    spanGaps:
+      true,
+
+    backgroundColor:
+      `${color}20`
+
+  };
+}
+
+
+// =====================================================
+// POGODA W TOOLTIPIE
+// =====================================================
+
+function getTooltipWeather(
+  items
+) {
+
+  if (
+    !items?.length
+  ) {
+
+    return "";
+  }
+
+
+  const row =
+    fullData[
+      items[0].dataIndex
+    ];
+
+
+  if (
+    !row
+  ) {
+
+    return "";
+  }
+
+
+  const state =
+    getWeatherState(
+      row[4],
+      row[8],
+      row[0]
+    );
+
+
+  return `${state.emoji} ${state.desc}`;
+}
+
+
+// =====================================================
+// NAJECHANIE NA WYKRES
+// =====================================================
+
+function handleChartHover(
+  event,
+  elements,
+  chart
+) {
+
+  const key =
+    chartKeyByCanvas[
+      chart.canvas.id
+    ];
+
+
+  if (
+    !key
+  ) {
+
+    return;
+  }
+
+
+  if (
+    !elements?.length
+  ) {
+
+    restoreChartDate(
+      chart
+    );
+
+
+    return;
+  }
+
+
+  const index =
+    elements[0].index;
+
+
+  const row =
+    fullData[
+      index
+    ];
+
+
+  if (
+    row
+  ) {
+
+    updateChartDate(
+      key,
+      row
+    );
+  }
+}
+
+
+// =====================================================
+// OPCJE WYKRESÓW
+// =====================================================
+
+function createBaseOptions(
+  min,
+  max,
+  unit = ""
+) {
+
+  return {
+
+    responsive:
+      true,
+
+    maintainAspectRatio:
+      false,
+
+
+    // =============================================
+    // MIEJSCE NAD WYKRESEM NA IKONY
+    // =============================================
+
+    layout: {
+
+      padding: {
+
+        top:
+          42
+
+      }
+    },
+
+
+    // =============================================
+    // MYSZKA
+    // =============================================
+
+    interaction: {
+
+      mode:
+        "index",
+
+      intersect:
+        false
+    },
+
+
+    onHover:
+      handleChartHover,
+
+
+    // =============================================
+    // OSIE
+    // =============================================
+
+    scales: {
+
+      y: {
+
+        suggestedMin:
+          min,
+
+        suggestedMax:
+          max,
+
+
+        ticks: {
+
+          color:
+            "#8b949e",
+
+          callback:
+            value =>
+            `${value}${unit}`
+        },
+
+
+        grid: {
+
+          color:
+            "rgba(139,148,158,0.06)"
+        }
+      },
+
+
+      x: {
+
+        ticks: {
+
+          color:
+            "#8b949e",
+
+          maxTicksLimit:
+            8,
+
+          autoSkip:
+            true,
+
+          maxRotation:
+            0,
+
+
+          callback:
+            function(
+              value
+            ) {
+
+              return formatAxisLabel(
+                this.getLabelForValue(
+                  value
+                )
+              );
+            }
+        },
+
+
+        grid: {
+
+          display:
+            false
+        }
+      }
+    },
+
+
+    // =============================================
+    // TOOLTIP
+    // =============================================
+
+    plugins: {
+
+      legend: {
+
+        display:
+          false
+      },
+
+
+      tooltip: {
+
+        displayColors:
+          false,
+
+
+        callbacks: {
+
+          title:
+            items => {
+
+              if (
+                !items?.length
+              ) {
+
+                return "";
+              }
+
+
+              return formatDateTime(
+                items[0].label
+              );
+            },
+
+
+          beforeBody:
+            items =>
+            getTooltipWeather(
+              items
+            )
+        }
+      }
+    }
+  };
+}
+
+
+// =====================================================
+// TWORZENIE WYKRESÓW
+// =====================================================
 
 function initCharts() {
-    const dataset = (label, color) => ({
-        label: label, data: [], borderColor: color, borderWidth: 4,
-        fill: true, tension: 0.4, pointRadius: 0, hoverRadius: 8,
-        backgroundColor: (context) => {
-            const chart = context.chart;
-            const {ctx, chartArea} = chart;
-            if (!chartArea) return null;
-            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-            gradient.addColorStop(0, color + '40');
-            gradient.addColorStop(1, color + '00');
-            return gradient;
-        }
-    });
 
-    const options = (sMin, sMax) => ({
-        responsive: true, maintainAspectRatio: false,
-        animation: { duration: 800 },
-        interaction: { mode: 'index', intersect: false },
-        onHover: (event, chartElement) => {
-            if (chartElement.length > 0) {
-                const index = chartElement[0].index;
-                updateCardsWithData(fullData[index]);
-                Object.values(charts).forEach(c => {
-                    if (c !== event.chart) {
-                        c.setActiveElements([{datasetIndex: 0, index}]);
-                        c.tooltip.setActiveElements([{datasetIndex: 0, index}]);
-                        c.update('none');
-                    }
-                });
-            }
-        },
-        scales: {
-            y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(139, 148, 158, 0.05)' }, suggestedMin: sMin, suggestedMax: sMax },
-            x: { display: true, ticks: { color: '#8b949e', maxTicksLimit: 8, autoSkip: true, font: { size: 10 } }, grid: { display: false } }
-        },
-        plugins: { 
-            legend: { display: false },
-            tooltip: { backgroundColor: 'rgba(13, 17, 23, 0.9)', borderColor: 'var(--accent-blue)', borderWidth: 1, displayColors: false }
-        }
-    });
 
-    charts.V1 = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [dataset('Temp', '#ff7b72')] }, options: options(10, 30), plugins: [weatherIconPlugin] });
-    charts.V2 = new Chart(document.getElementById('humChart'), { type: 'line', data: { datasets: [dataset('Wilg', '#79c0ff')] }, options: options(20, 90) });
-    charts.V3 = new Chart(document.getElementById('presChart'), { type: 'line', data: { datasets: [dataset('Cis', '#7ee787')] }, options: options(990, 1030) });
-    charts.V4 = new Chart(document.getElementById('luxChart'), { type: 'line', data: { datasets: [dataset('Lux', '#f1c40f')] }, options: options(0, 10000) });
-    charts.V5 = new Chart(document.getElementById('uvChart'), { type: 'line', data: { datasets: [dataset('UV', '#ab47bc')] }, options: options(0, 11) });
+  // =============================================
+  // TEMPERATURA
+  // =============================================
+
+  charts.V1 =
+    new Chart(
+
+      document.getElementById(
+        "tempChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Temperatura",
+              "#ff7b72"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            10,
+            30,
+            "°C"
+          )
+      }
+    );
+
+
+  // =============================================
+  // WILGOTNOŚĆ
+  // =============================================
+
+  charts.V2 =
+    new Chart(
+
+      document.getElementById(
+        "humChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Wilgotność",
+              "#79c0ff"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            20,
+            100,
+            "%"
+          )
+      }
+    );
+
+
+  // =============================================
+  // CIŚNIENIE
+  // =============================================
+
+  charts.V3 =
+    new Chart(
+
+      document.getElementById(
+        "presChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Ciśnienie",
+              "#7ee787"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            980,
+            1030,
+            " hPa"
+          )
+      }
+    );
+
+
+  // =============================================
+  // JASNOŚĆ
+  // =============================================
+
+  charts.V4 =
+    new Chart(
+
+      document.getElementById(
+        "luxChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Jasność",
+              "#f1c40f"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            0,
+            10000,
+            " lx"
+          )
+      }
+    );
+
+
+  // =============================================
+  // UV
+  // =============================================
+
+  charts.V5 =
+    new Chart(
+
+      document.getElementById(
+        "uvChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "UV",
+              "#ab47bc"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            0,
+            11,
+            ""
+          )
+      }
+    );
+
+
+  // =============================================
+  // WIATR
+  // =============================================
+
+  charts.V6 =
+    new Chart(
+
+      document.getElementById(
+        "windChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Wiatr",
+              "#56d4dd"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            0,
+            10,
+            " m/s"
+          )
+      }
+    );
+
+
+  // =============================================
+  // KIERUNEK
+  // =============================================
+
+  const dirOptions =
+    createBaseOptions(
+      0,
+      7,
+      ""
+    );
+
+
+  dirOptions.scales.y = {
+
+    min:
+      0,
+
+    max:
+      7,
+
+
+    ticks: {
+
+      stepSize:
+        1,
+
+      color:
+        "#8b949e",
+
+      callback:
+        value =>
+        numberToDirection(
+          value
+        )
+    },
+
+
+    grid: {
+
+      color:
+        "rgba(139,148,158,0.06)"
+    }
+  };
+
+
+  dirOptions.plugins.tooltip.callbacks.label =
+    context =>
+    `Kierunek: ${numberToDirection(context.parsed.y)}`;
+
+
+  charts.V7 =
+    new Chart(
+
+      document.getElementById(
+        "dirChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Kierunek",
+              "#d2a8ff",
+              true
+            )
+
+          ]
+        },
+
+
+        options:
+          dirOptions
+      }
+    );
+
+
+  // =============================================
+  // OPADY
+  // =============================================
+
+  charts.V8 =
+    new Chart(
+
+      document.getElementById(
+        "rainChart"
+      ),
+
+      {
+
+        type:
+          "line",
+
+
+        data: {
+
+          datasets: [
+
+            createDataset(
+              "Opady",
+              "#58a6ff"
+            )
+
+          ]
+        },
+
+
+        options:
+          createBaseOptions(
+            0,
+            100,
+            "%"
+          )
+      }
+    );
+
+
+  // =============================================
+  // PO ZJECHANIU MYSZKĄ WRÓĆ DO NAJNOWSZEGO
+  // =============================================
+
+  Object.values(
+    charts
+  )
+  .forEach(
+    chart => {
+
+      chart.canvas.addEventListener(
+
+        "mouseleave",
+
+        () =>
+        restoreChartDate(
+          chart
+        )
+
+      );
+    }
+  );
 }
+
+
+// =====================================================
+// AKTUALIZACJA WYKRESÓW
+// =====================================================
 
 function updateCharts() {
-    const pts = getVisiblePoints();
-    const labels = fullData.map(row => {
-        const d = new Date(row[0]);
-        return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    });
-    
-    Object.keys(charts).forEach((key) => {
-        const chart = charts[key];
-        const idx = parseInt(key.replace('V', ''));
-        chart.data.labels = labels;
-        chart.data.datasets[0].data = fullData.map(row => parseFloat(row[idx]) || 0);
-        
-        const slider = document.getElementById('scroll' + key);
-        if (slider) {
-            slider.value = 100;
-            chart.options.scales.x.min = Math.max(0, fullData.length - pts);
-            chart.options.scales.x.max = fullData.length;
-        }
-        chart.update('default');
-    });
-}
 
-function manualScroll(key, val) {
-    const pts = getVisiblePoints();
-    let start = Math.floor((val / 100) * Math.max(0, fullData.length - pts));
-    Object.keys(charts).forEach(k => {
-        charts[k].options.scales.x.min = start;
-        charts[k].options.scales.x.max = start + pts;
-        charts[k].update('none');
-        const s = document.getElementById('scroll' + k);
-        if(s) s.value = val;
-    });
-    const targetIndex = Math.min(start + pts - 1, fullData.length - 1);
-    updateCardsWithData(fullData[targetIndex]);
-}
+  const labels =
+    fullData.map(
+      row =>
+      Number(
+        row[0]
+      )
+    );
 
-function scrollToChart(chartId) {
-    const element = document.getElementById(chartId);
-    if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        const container = element.parentElement;
-        container.style.boxShadow = "0 0 50px var(--accent-blue)";
-        setTimeout(() => { container.style.boxShadow = "none"; }, 800);
+
+  Object.keys(
+    charts
+  )
+  .forEach(
+    key => {
+
+      const chart =
+        charts[
+          key
+        ];
+
+
+      const index =
+        parseInt(
+          key.replace(
+            "V",
+            ""
+          ),
+          10
+        );
+
+
+      chart.data.labels =
+        labels;
+
+
+      // =========================================
+      // KIERUNEK
+      // =========================================
+
+      if (
+        index === 7
+      ) {
+
+        chart.data.datasets[0].data =
+          fullData.map(
+            row =>
+            directionToNumber(
+              row[7]
+            )
+          );
+
+      }
+
+      // =========================================
+      // POZOSTAŁE WYKRESY
+      // =========================================
+
+      else {
+
+        chart.data.datasets[0].data =
+          fullData.map(
+            row => {
+
+              const value =
+                parseFloat(
+                  row[
+                    index
+                  ]
+                );
+
+
+              return Number.isFinite(
+                value
+              )
+              ?
+              value
+              :
+              null;
+            }
+          );
+      }
+
+
+      // =========================================
+      // OSTATNIE 24 PUNKTY
+      // =========================================
+
+      chart.options.scales.x.min =
+        Math.max(
+          0,
+          fullData.length -
+          VISIBLE_POINTS
+        );
+
+
+      chart.options.scales.x.max =
+        Math.max(
+          0,
+          fullData.length -
+          1
+        );
+
+
+      chart.update();
     }
+  );
 }
 
-function changeInterval(type, btn) {
-    if (currentInterval === type) return;
-    currentInterval = type;
-    document.querySelectorAll('#interval-btns button').forEach(b => b.classList.remove('active'));
-    if(btn) btn.classList.add('active');
-    lastKnownTimestamp = null;
-    hasUpdatedThisCycle = false;
-    refreshValues();
-}
 
-function updateStatus(online) {
-    const icon = document.getElementById('wifi-icon');
-    const text = document.getElementById('status-text');
-    if (!icon || !text) return;
-    if (online === 'loading') {
-        icon.style.color = "#f1c40f"; icon.classList.add('status-spin');
-        text.innerText = "Aktualizacja...";
-    } else if (online === true) {
-        icon.style.color = "#7ee787"; icon.classList.remove('status-spin');
-        text.innerText = (currentInterval === "5min") ? "LIVE" : "Online";
-    } else {
-        icon.style.color = "#ff7b72"; icon.classList.remove('status-spin');
-        text.innerText = "Offline";
+// =====================================================
+// SUWAK
+// =====================================================
+
+function manualScroll(
+  key,
+  value
+) {
+
+  const maxStart =
+    Math.max(
+      0,
+      fullData.length -
+      VISIBLE_POINTS
+    );
+
+
+  const start =
+    Math.floor(
+      Number(
+        value
+      )
+      /
+      100
+      *
+      maxStart
+    );
+
+
+  const end =
+    Math.min(
+      fullData.length -
+      1,
+      start +
+      VISIBLE_POINTS -
+      1
+    );
+
+
+  Object.keys(
+    charts
+  )
+  .forEach(
+    chartKey => {
+
+      charts[
+        chartKey
+      ]
+      .options
+      .scales
+      .x
+      .min =
+        start;
+
+
+      charts[
+        chartKey
+      ]
+      .options
+      .scales
+      .x
+      .max =
+        end;
+
+
+      charts[
+        chartKey
+      ]
+      .update(
+        "none"
+      );
+
+
+      const slider =
+        document.getElementById(
+          `scroll${chartKey}`
+        );
+
+
+      if (
+        slider
+      ) {
+
+        slider.value =
+          value;
+      }
     }
+  );
 }
 
-if(document.getElementById('checkbox')) {
-    document.getElementById('checkbox').addEventListener('change', () => document.body.classList.toggle('light-mode'));
+
+// =====================================================
+// PRZEWIJANIE DO WYKRESU
+// =====================================================
+
+function scrollToChart(
+  id
+) {
+
+  const element =
+    document.getElementById(
+      id
+    );
+
+
+  if (
+    !element
+  ) {
+
+    return;
+  }
+
+
+  const container =
+    element.closest(
+      ".chart-container"
+    );
+
+
+  if (
+    container
+  ) {
+
+    container.scrollIntoView({
+
+      behavior:
+        "smooth",
+
+      block:
+        "center"
+
+    });
+  }
 }
 
-window.onload = () => { 
-    initCharts(); 
+
+// =====================================================
+// ZMIANA INTERWAŁU
+// =====================================================
+
+function changeInterval(
+  type,
+  button
+) {
+
+  currentInterval =
+    type;
+
+
+  document.querySelectorAll(
+    "#interval-btns button"
+  )
+  .forEach(
+    element => {
+
+      element.classList.remove(
+        "active"
+      );
+    }
+  );
+
+
+  if (
+    button
+  ) {
+
+    button.classList.add(
+      "active"
+    );
+  }
+
+
+  lastKnownTimestamp =
+    null;
+
+
+  lastAutoFetchKey =
+    "";
+
+
+  refreshValues();
+
+
+  refreshExtraValues();
+}
+
+
+// =====================================================
+// STATUS
+// =====================================================
+
+function updateStatus(
+  status
+) {
+
+  const icon =
+    document.getElementById(
+      "wifi-icon"
+    );
+
+
+  const text =
+    document.getElementById(
+      "status-text"
+    );
+
+
+  if (
+    !icon ||
+    !text
+  ) {
+
+    return;
+  }
+
+
+  if (
+    status ===
+    "loading"
+  ) {
+
+    icon.style.color =
+      "#f1c40f";
+
+
+    text.innerText =
+      "Aktualizacja...";
+  }
+
+
+  else if (
+    status === true
+  ) {
+
+    icon.style.color =
+      "#7ee787";
+
+
+    text.innerText =
+      currentInterval ===
+      "5min"
+      ?
+      "LIVE"
+      :
+      "Online";
+  }
+
+
+  else {
+
+    icon.style.color =
+      "#ff7b72";
+
+
+    text.innerText =
+      "Offline";
+  }
+}
+
+
+// =====================================================
+// MOTYW
+// =====================================================
+
+const themeCheckbox =
+  document.getElementById(
+    "checkbox"
+  );
+
+
+if (
+  themeCheckbox
+) {
+
+  themeCheckbox.addEventListener(
+
+    "change",
+
+    () => {
+
+      document.body.classList.toggle(
+        "light-mode"
+      );
+    }
+  );
+}
+
+
+// =====================================================
+// START
+// =====================================================
+
+window.addEventListener(
+
+  "load",
+
+  () => {
+
+    initCharts();
+
+
+    updateCurrentDate();
+
+
     refreshValues();
-    setInterval(runTick, 1000); 
-};
+
+
+    refreshExtraValues();
+
+
+    setInterval(
+      runTick,
+      1000
+    );
+
+
+    setInterval(
+      updateCurrentDate,
+      1000
+    );
+
+
+    setInterval(
+      refreshExtraValues,
+      10000
+    );
+  }
+);
