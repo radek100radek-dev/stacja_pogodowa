@@ -6,23 +6,16 @@
   <title>Meteo Dashboard LIVE</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
   <div class="top-bar">
-
     <div class="battery-widget">
 
       <div class="battery-icon">
-        <div id="battery-fill"
-             class="battery-fill">
-        </div>
+        <div id="battery-fill" class="battery-fill"></div>
       </div>
 
       <div class="battery-info">
@@ -31,8 +24,9 @@
           --%
         </div>
 
-        <div id="battery-voltage">
-          -- V
+        <div id="battery-status"
+             class="battery-status">
+          Oczekiwanie...
         </div>
 
       </div>
@@ -50,7 +44,6 @@
              class="theme-label-fancy">
 
         <i class="fa-solid fa-sun"></i>
-
         <i class="fa-solid fa-moon"></i>
 
         <div class="theme-ball"></div>
@@ -58,16 +51,15 @@
       </label>
 
     </div>
-
   </div>
 
 
   <div class="container">
 
 
-    <!-- ============================================= -->
-    <!-- GŁÓWNA KARTA POGODY -->
-    <!-- ============================================= -->
+    <!-- ================================================= -->
+    <!-- GLOWNA KARTA POGODY -->
+    <!-- ================================================= -->
 
     <div class="weather-status-card">
 
@@ -106,9 +98,9 @@
     </div>
 
 
-    <!-- ============================================= -->
-    <!-- INTERWAŁ -->
-    <!-- ============================================= -->
+    <!-- ================================================= -->
+    <!-- INTERWAL -->
+    <!-- ================================================= -->
 
     <div class="btn-group"
          id="interval-btns">
@@ -134,9 +126,9 @@
     </div>
 
 
-    <!-- ============================================= -->
+    <!-- ================================================= -->
     <!-- KAFELKI -->
-    <!-- ============================================= -->
+    <!-- ================================================= -->
 
     <div class="grid">
 
@@ -194,14 +186,6 @@
           <span id="v4">--</span> Lux
         </div>
 
-        <div class="vis-container">
-
-          <div id="bar-lux"
-               class="vis-bar">
-          </div>
-
-        </div>
-
       </div>
 
 
@@ -214,14 +198,6 @@
 
         <div class="value">
           <span id="v5">--</span> UV
-        </div>
-
-        <div class="vis-container">
-
-          <div id="bar-uv"
-               class="vis-bar">
-          </div>
-
         </div>
 
       </div>
@@ -298,9 +274,9 @@
     </div>
 
 
-    <!-- ============================================= -->
+    <!-- ================================================= -->
     <!-- TEMPERATURA -->
-    <!-- ============================================= -->
+    <!-- ================================================= -->
 
     <div class="chart-container main-chart">
 
@@ -354,14 +330,14 @@
     </div>
 
 
-    <!-- ============================================= -->
-    <!-- MAŁE WYKRESY -->
-    <!-- ============================================= -->
+    <!-- ================================================= -->
+    <!-- MALE WYKRESY -->
+    <!-- ================================================= -->
 
     <div class="chart-grid">
 
 
-      <!-- WILGOTNOŚĆ -->
+      <!-- WILGOTNOSC -->
 
       <div class="chart-container small">
 
@@ -415,7 +391,7 @@
       </div>
 
 
-      <!-- CIŚNIENIE -->
+      <!-- CISNIENIE -->
 
       <div class="chart-container small">
 
@@ -469,7 +445,7 @@
       </div>
 
 
-      <!-- JASNOŚĆ -->
+      <!-- JASNOSC -->
 
       <div class="chart-container small">
 
