@@ -32,11 +32,11 @@ const directionNames = [
 ];
 
 
-const BATTERY_MIN_V =
-  4.50;
+const BATTERY_RED_MAX =
+  20;
 
-const BATTERY_MAX_V =
-  5.20;
+const BATTERY_YELLOW_MAX =
+  50;
 
 
 const VISIBLE_POINTS =
@@ -73,43 +73,19 @@ const chartKeyByCanvas = {
 
 // =====================================================
 // BATERIA
+//
+// GOOGLE ZWRACA GOTOWY PROCENT W row[9]
+//
+// 0-20%   = CZERWONA + PULSOWANIE
+// 21-50%  = ZOLTA
+// 51-100% = ZIELONA
 // =====================================================
-
-function calculateBatteryPercent(
-  voltage
-) {
-
-  const percent =
-    Math.round(
-      (
-        voltage -
-        BATTERY_MIN_V
-      )
-      /
-      (
-        BATTERY_MAX_V -
-        BATTERY_MIN_V
-      )
-      *
-      100
-    );
-
-
-  return Math.max(
-    0,
-    Math.min(
-      100,
-      percent
-    )
-  );
-}
-
 
 function updateBattery(
   value
 ) {
 
-  const voltage =
+  const rawPercent =
     parseFloat(
       value
     );
@@ -117,7 +93,7 @@ function updateBattery(
 
   if (
     !Number.isFinite(
-      voltage
+      rawPercent
     )
   ) {
 
@@ -126,8 +102,18 @@ function updateBattery(
 
 
   const percent =
-    calculateBatteryPercent(
-      voltage
+    Math.max(
+      0,
+      Math.min(
+        100,
+        rawPercent
+      )
+    );
+
+
+  const displayPercent =
+    Math.round(
+      percent
     );
 
 
@@ -143,9 +129,15 @@ function updateBattery(
     );
 
 
-  const voltageText =
+  const statusText =
     document.getElementById(
-      "battery-voltage"
+      "battery-status"
+    );
+
+
+  const widget =
+    document.querySelector(
+      ".battery-widget"
     );
 
 
@@ -154,16 +146,7 @@ function updateBattery(
   ) {
 
     percentText.innerText =
-      `${percent}%`;
-  }
-
-
-  if (
-    voltageText
-  ) {
-
-    voltageText.innerText =
-      `${voltage.toFixed(2)} V`;
+      `${displayPercent}%`;
   }
 
 
@@ -175,16 +158,137 @@ function updateBattery(
       `${percent}%`;
 
 
-    fill.style.background =
-      percent <= 20
-      ?
-      "#ff4d4d"
-      :
-      percent <= 50
-      ?
-      "#f1c40f"
-      :
-      "#7ee787";
+    fill.classList.remove(
+      "battery-green",
+      "battery-yellow",
+      "battery-red"
+    );
+  }
+
+
+  if (
+    widget
+  ) {
+
+    widget.classList.remove(
+      "battery-widget-green",
+      "battery-widget-yellow",
+      "battery-widget-red"
+    );
+  }
+
+
+  if (
+    percent <=
+    BATTERY_RED_MAX
+  ) {
+
+    if (
+      fill
+    ) {
+
+      fill.classList.add(
+        "battery-red"
+      );
+    }
+
+
+    if (
+      widget
+    ) {
+
+      widget.classList.add(
+        "battery-widget-red"
+      );
+    }
+
+
+    if (
+      statusText
+    ) {
+
+      statusText.innerText =
+        "Niski poziom";
+
+
+      statusText.className =
+        "battery-status battery-status-red";
+    }
+  }
+
+
+  else if (
+    percent <=
+    BATTERY_YELLOW_MAX
+  ) {
+
+    if (
+      fill
+    ) {
+
+      fill.classList.add(
+        "battery-yellow"
+      );
+    }
+
+
+    if (
+      widget
+    ) {
+
+      widget.classList.add(
+        "battery-widget-yellow"
+      );
+    }
+
+
+    if (
+      statusText
+    ) {
+
+      statusText.innerText =
+        "Sredni poziom";
+
+
+      statusText.className =
+        "battery-status battery-status-yellow";
+    }
+  }
+
+
+  else {
+
+    if (
+      fill
+    ) {
+
+      fill.classList.add(
+        "battery-green"
+      );
+    }
+
+
+    if (
+      widget
+    ) {
+
+      widget.classList.add(
+        "battery-widget-green"
+      );
+    }
+
+
+    if (
+      statusText
+    ) {
+
+      statusText.innerText =
+        "Dobry poziom";
+
+
+      statusText.className =
+        "battery-status battery-status-green";
+    }
   }
 }
 
@@ -200,7 +304,6 @@ function updateCurrentDate() {
 
 
   const days = [
-
     "Niedziela",
     "Poniedziałek",
     "Wtorek",
@@ -208,7 +311,6 @@ function updateCurrentDate() {
     "Czwartek",
     "Piątek",
     "Sobota"
-
   ];
 
 
@@ -248,7 +350,7 @@ function updateCurrentDate() {
 
 
 // =====================================================
-// FORMAT DATY POMIARU
+// FORMAT DATY
 // =====================================================
 
 function formatDateTime(
@@ -407,11 +509,8 @@ function formatAxisLabel(
 
 
   return [
-
     `${d}.${m}`,
-
     `${h}:${min}`
-
   ];
 }
 
@@ -444,10 +543,10 @@ function directionToNumber(
 
 
   return index >= 0
-  ?
-  index
-  :
-  null;
+    ?
+    index
+    :
+    null;
 }
 
 
@@ -468,7 +567,7 @@ function numberToDirection(
 
 
 // =====================================================
-// STAN POGODY DLA KONKRETNEGO POMIARU
+// STAN POGODY
 // =====================================================
 
 function getWeatherState(
@@ -528,10 +627,6 @@ function getWeatherState(
     hour > 20;
 
 
-  // =============================================
-  // ULEWA
-  // =============================================
-
   if (
     rainValue >= 70
   ) {
@@ -547,10 +642,6 @@ function getWeatherState(
     };
   }
 
-
-  // =============================================
-  // DESZCZ
-  // =============================================
 
   if (
     rainValue >= 25
@@ -568,10 +659,6 @@ function getWeatherState(
   }
 
 
-  // =============================================
-  // LEKKI DESZCZ
-  // =============================================
-
   if (
     rainValue >= 5
   ) {
@@ -587,10 +674,6 @@ function getWeatherState(
     };
   }
 
-
-  // =============================================
-  // NOC
-  // =============================================
 
   if (
     night &&
@@ -609,10 +692,6 @@ function getWeatherState(
   }
 
 
-  // =============================================
-  // POCHMURNO
-  // =============================================
-
   if (
     luxValue < 300
   ) {
@@ -629,10 +708,6 @@ function getWeatherState(
   }
 
 
-  // =============================================
-  // ZACHMURZENIE
-  // =============================================
-
   if (
     luxValue < 2500
   ) {
@@ -648,10 +723,6 @@ function getWeatherState(
     };
   }
 
-
-  // =============================================
-  // SŁOŃCE
-  // =============================================
 
   return {
 
@@ -682,7 +753,8 @@ const weatherHistoryPlugin = {
     if (
       !Array.isArray(
         fullData
-      ) ||
+      )
+      ||
       fullData.length === 0
     ) {
 
@@ -708,10 +780,6 @@ const weatherHistoryPlugin = {
       return;
     }
 
-
-    // =============================================
-    // PUNKTY WIDOCZNE AKTUALNIE NA WYKRESIE
-    // =============================================
 
     const visible =
       [];
@@ -782,10 +850,6 @@ const weatherHistoryPlugin = {
     }
 
 
-    // =============================================
-    // WYBÓR IKON
-    // =============================================
-
     const selectedIndexes =
       new Set(
         [
@@ -794,8 +858,6 @@ const weatherHistoryPlugin = {
         ]
       );
 
-
-    // Zawsze pokazuj zmianę pogody.
 
     for (
       let i = 1;
@@ -820,10 +882,6 @@ const weatherHistoryPlugin = {
       }
     }
 
-
-    // =============================================
-    // DODAJ KILKA IKON POŚREDNICH
-    // =============================================
 
     const usableWidth =
       area.right -
@@ -875,10 +933,6 @@ const weatherHistoryPlugin = {
       );
 
 
-    // =============================================
-    // RYSOWANIE
-    // =============================================
-
     const ctx =
       chart.ctx;
 
@@ -909,8 +963,6 @@ const weatherHistoryPlugin = {
       "#30363d";
 
 
-    // Ikony są nad właściwą siatką wykresu.
-
     const iconY =
       area.top -
       22;
@@ -939,10 +991,6 @@ const weatherHistoryPlugin = {
         const x =
           item.point.x;
 
-
-        // =========================================
-        // TŁO IKONY
-        // =========================================
 
         ctx.beginPath();
 
@@ -974,10 +1022,6 @@ const weatherHistoryPlugin = {
         ctx.stroke();
 
 
-        // =========================================
-        // MAŁY ŁĄCZNIK
-        // =========================================
-
         ctx.beginPath();
 
 
@@ -1003,10 +1047,6 @@ const weatherHistoryPlugin = {
 
         ctx.stroke();
 
-
-        // =========================================
-        // EMOJI
-        // =========================================
 
         ctx.font =
           chart.width < 650
@@ -1044,7 +1084,7 @@ Chart.register(
 
 
 // =====================================================
-// KAFELKI - POMOCNICZE
+// KAFELKI
 // =====================================================
 
 function setNumericText(
@@ -1087,7 +1127,7 @@ function setNumericText(
 
 
 // =====================================================
-// DATA NAD KONKRETNYM WYKRESEM
+// DATA NAD WYKRESEM
 // =====================================================
 
 function updateChartDate(
@@ -1120,10 +1160,6 @@ function updateChartDate(
 }
 
 
-// =====================================================
-// PRZYWRÓCENIE NAJNOWSZEGO POMIARU
-// =====================================================
-
 function restoreChartDate(
   chart
 ) {
@@ -1152,7 +1188,7 @@ function restoreChartDate(
 
 
 // =====================================================
-// AKTUALIZACJA KAFELKÓW
+// AKTUALIZACJA KAFELKOW
 // =====================================================
 
 function updateCardsWithData(
@@ -1233,18 +1269,6 @@ function updateCardsWithData(
   }
 
 
-  const lux =
-    parseFloat(
-      row[4]
-    );
-
-
-  const uv =
-    parseFloat(
-      row[5]
-    );
-
-
   const weather =
     getWeatherState(
       row[4],
@@ -1298,72 +1322,6 @@ function updateCardsWithData(
   }
 
 
-  // =============================================
-  // PASEK LUX
-  // =============================================
-
-  if (
-    Number.isFinite(
-      lux
-    )
-  ) {
-
-    const bar =
-      document.getElementById(
-        "bar-lux"
-      );
-
-
-    if (
-      bar
-    ) {
-
-      bar.style.width =
-        `${Math.min(
-          lux /
-          50000 *
-          100,
-          100
-        )}%`;
-    }
-  }
-
-
-  // =============================================
-  // PASEK UV
-  // =============================================
-
-  if (
-    Number.isFinite(
-      uv
-    )
-  ) {
-
-    const bar =
-      document.getElementById(
-        "bar-uv"
-      );
-
-
-    if (
-      bar
-    ) {
-
-      bar.style.width =
-        `${Math.min(
-          uv /
-          11 *
-          100,
-          100
-        )}%`;
-    }
-  }
-
-
-  // =============================================
-  // DATA NA KAŻDYM WYKRESIE
-  // =============================================
-
   for (
     let i = 1;
     i <= 8;
@@ -1380,6 +1338,8 @@ function updateCardsWithData(
 
 // =====================================================
 // NAJNOWSZY POMIAR
+//
+// row[9] = PROCENT BATERII
 // =====================================================
 
 async function refreshExtraValues() {
@@ -1429,6 +1389,7 @@ async function refreshExtraValues() {
     }
 
   }
+
   catch (
     error
   ) {
@@ -1442,7 +1403,7 @@ async function refreshExtraValues() {
 
 
 // =====================================================
-// DANE DO WYKRESÓW
+// DANE DO WYKRESOW
 // =====================================================
 
 async function refreshValues() {
@@ -1468,9 +1429,7 @@ async function refreshValues() {
 
     const response =
       await fetch(
-
         `${scriptURL}?read=true&interval=${currentInterval}&t=${Date.now()}`,
-
         {
           cache:
             "no-store"
@@ -1524,6 +1483,16 @@ async function refreshValues() {
     );
 
 
+    if (
+      newestRow.length >= 10
+    ) {
+
+      updateBattery(
+        newestRow[9]
+      );
+    }
+
+
     updateCharts();
 
 
@@ -1548,6 +1517,7 @@ async function refreshValues() {
     return newData;
 
   }
+
   catch (
     error
   ) {
@@ -1566,6 +1536,7 @@ async function refreshValues() {
     return false;
 
   }
+
   finally {
 
     isFetching =
@@ -1575,119 +1546,136 @@ async function refreshValues() {
 
 
 // =====================================================
-// NASTĘPNA AKTUALIZACJA
+// NASTEPNA AKTUALIZACJA
 // =====================================================
 
 function getNextExpectedUpdate(
   now = new Date()
 ) {
 
-  const target =
-    new Date(
-      now
-    );
+  /*
+    LIVE:
+    00:00:30
+    00:05:30
+    00:10:30
+    itd.
 
+    1h:
+    każda pełna godzina + 30 sekund.
 
-  // =============================================
-  // 6 GODZIN
-  // =============================================
+    6h:
+    00:00:30
+    06:00:30
+    12:00:30
+    18:00:30
+
+    30 sekund zapasu daje Apps Scriptowi czas
+    na zapisanie/usrednienie nowego wiersza.
+  */
+
+  let periodMs;
+
 
   if (
     currentInterval ===
     "6h"
   ) {
 
-    const nextBlock =
-      (
-        Math.floor(
-          now.getHours() /
-          6
-        )
-        +
-        1
-      )
-      *
-      6;
-
-
-    if (
-      nextBlock >= 24
-    ) {
-
-      target.setDate(
-        target.getDate() + 1
-      );
-
-
-      target.setHours(
-        0,
-        0,
-        30,
-        0
-      );
-
-    }
-    else {
-
-      target.setHours(
-        nextBlock,
-        0,
-        30,
-        0
-      );
-    }
-
-
-    return target;
+    periodMs =
+      6 *
+      60 *
+      60 *
+      1000;
   }
 
-
-  // =============================================
-  // 1 GODZINA
-  // =============================================
-
-  if (
+  else if (
     currentInterval ===
     "1h"
   ) {
 
-    target.setHours(
-      now.getHours() + 1,
-      0,
-      30,
-      0
-    );
+    periodMs =
+      60 *
+      60 *
+      1000;
+  }
 
+  else {
 
-    return target;
+    periodMs =
+      5 *
+      60 *
+      1000;
   }
 
 
-  // =============================================
-  // 5 MINUT
-  // =============================================
+  const offsetMs =
+    30000;
 
-  const interval =
-    5 *
+
+  const nowMs =
+    now.getTime();
+
+
+  /*
+    Przeliczenie na czas lokalny.
+
+    To jest ważne szczególnie dla 6h,
+    żeby granice były:
+
+    00 / 06 / 12 / 18
+
+    według lokalnego czasu użytkownika.
+  */
+
+  const timezoneOffsetMs =
+    now.getTimezoneOffset() *
     60 *
     1000;
 
 
-  const next =
-    Math.floor(
-      now.getTime() /
-      interval
+  const localNowMs =
+    nowMs -
+    timezoneOffsetMs;
+
+
+  /*
+    Odejmujemy 30 sekund PRZED ceil().
+
+    Dzięki temu:
+
+    19:00:05
+
+    nadal wskazuje następny update:
+
+    19:00:30
+
+    zamiast błędnie przeskoczyć na:
+
+    20:00:30
+  */
+
+  const targetLocalMs =
+    Math.ceil(
+      (
+        localNowMs -
+        offsetMs
+      )
+      /
+      periodMs
     )
     *
-    interval
+    periodMs
     +
-    interval
-    +
-    30000;
+    offsetMs;
+
+
+  const targetMs =
+    targetLocalMs +
+    timezoneOffsetMs;
 
 
   return new Date(
-    next
+    targetMs
   );
 }
 
@@ -1774,6 +1762,12 @@ function runTick() {
     `${currentInterval}-${target.getTime()}`;
 
 
+  /*
+    Pobieramy dane około 2 sekundy przed punktem
+    +30 s. Apps Script ma więc około 28 sekund
+    od granicy okresu na przygotowanie danych.
+  */
+
   if (
     seconds <= 2
     &&
@@ -1786,6 +1780,9 @@ function runTick() {
 
 
     refreshValues();
+
+
+    refreshExtraValues();
   }
 }
 
@@ -1948,7 +1945,7 @@ function handleChartHover(
 
 
 // =====================================================
-// OPCJE WYKRESÓW
+// OPCJE WYKRESOW
 // =====================================================
 
 function createBaseOptions(
@@ -1966,10 +1963,6 @@ function createBaseOptions(
       false,
 
 
-    // =============================================
-    // MIEJSCE NAD WYKRESEM NA IKONY
-    // =============================================
-
     layout: {
 
       padding: {
@@ -1980,10 +1973,6 @@ function createBaseOptions(
       }
     },
 
-
-    // =============================================
-    // MYSZKA
-    // =============================================
 
     interaction: {
 
@@ -1998,10 +1987,6 @@ function createBaseOptions(
     onHover:
       handleChartHover,
 
-
-    // =============================================
-    // OSIE
-    // =============================================
 
     scales: {
 
@@ -2073,10 +2058,6 @@ function createBaseOptions(
     },
 
 
-    // =============================================
-    // TOOLTIP
-    // =============================================
-
     plugins: {
 
       legend: {
@@ -2124,15 +2105,11 @@ function createBaseOptions(
 
 
 // =====================================================
-// TWORZENIE WYKRESÓW
+// TWORZENIE WYKRESOW
 // =====================================================
 
 function initCharts() {
 
-
-  // =============================================
-  // TEMPERATURA
-  // =============================================
 
   charts.V1 =
     new Chart(
@@ -2170,10 +2147,6 @@ function initCharts() {
     );
 
 
-  // =============================================
-  // WILGOTNOŚĆ
-  // =============================================
-
   charts.V2 =
     new Chart(
 
@@ -2209,10 +2182,6 @@ function initCharts() {
       }
     );
 
-
-  // =============================================
-  // CIŚNIENIE
-  // =============================================
 
   charts.V3 =
     new Chart(
@@ -2250,10 +2219,6 @@ function initCharts() {
     );
 
 
-  // =============================================
-  // JASNOŚĆ
-  // =============================================
-
   charts.V4 =
     new Chart(
 
@@ -2289,10 +2254,6 @@ function initCharts() {
       }
     );
 
-
-  // =============================================
-  // UV
-  // =============================================
 
   charts.V5 =
     new Chart(
@@ -2330,10 +2291,6 @@ function initCharts() {
     );
 
 
-  // =============================================
-  // WIATR
-  // =============================================
-
   charts.V6 =
     new Chart(
 
@@ -2369,10 +2326,6 @@ function initCharts() {
       }
     );
 
-
-  // =============================================
-  // KIERUNEK
-  // =============================================
 
   const dirOptions =
     createBaseOptions(
@@ -2453,10 +2406,6 @@ function initCharts() {
     );
 
 
-  // =============================================
-  // OPADY
-  // =============================================
-
   charts.V8 =
     new Chart(
 
@@ -2493,10 +2442,6 @@ function initCharts() {
     );
 
 
-  // =============================================
-  // PO ZJECHANIU MYSZKĄ WRÓĆ DO NAJNOWSZEGO
-  // =============================================
-
   Object.values(
     charts
   )
@@ -2519,7 +2464,7 @@ function initCharts() {
 
 
 // =====================================================
-// AKTUALIZACJA WYKRESÓW
+// AKTUALIZACJA WYKRESOW
 // =====================================================
 
 function updateCharts() {
@@ -2559,10 +2504,6 @@ function updateCharts() {
         labels;
 
 
-      // =========================================
-      // KIERUNEK
-      // =========================================
-
       if (
         index === 7
       ) {
@@ -2576,10 +2517,6 @@ function updateCharts() {
           );
 
       }
-
-      // =========================================
-      // POZOSTAŁE WYKRESY
-      // =========================================
 
       else {
 
@@ -2606,10 +2543,6 @@ function updateCharts() {
           );
       }
 
-
-      // =========================================
-      // OSTATNIE 24 PUNKTY
-      // =========================================
 
       chart.options.scales.x.min =
         Math.max(
@@ -2770,7 +2703,7 @@ function scrollToChart(
 
 
 // =====================================================
-// ZMIANA INTERWAŁU
+// ZMIANA INTERWALU
 // =====================================================
 
 function changeInterval(
@@ -2811,6 +2744,9 @@ function changeInterval(
 
   lastAutoFetchKey =
     "";
+
+
+  runTick();
 
 
   refreshValues();
@@ -2937,11 +2873,27 @@ window.addEventListener(
     updateCurrentDate();
 
 
+    /*
+      Timer pokazujemy OD RAZU,
+      bez czekania pierwszej sekundy.
+    */
+
+    runTick();
+
+
+    /*
+      Natychmiast pobieramy dane.
+    */
+
     refreshValues();
 
 
     refreshExtraValues();
 
+
+    /*
+      Timer aktualizuje sie co 1 sekunde.
+    */
 
     setInterval(
       runTick,
@@ -2949,11 +2901,19 @@ window.addEventListener(
     );
 
 
+    /*
+      Zegar na stronie aktualizuje sie co 1 sekunde.
+    */
+
     setInterval(
       updateCurrentDate,
       1000
     );
 
+
+    /*
+      Najnowszy pomiar + bateria odswiezane co 10 sekund.
+    */
 
     setInterval(
       refreshExtraValues,
